@@ -1,0 +1,344 @@
+<html>
+	<head>
+		<title>My first Three.js app</title>
+		<style>
+		body { margin:0; padding: 0; }
+		/*canvas { width: 100%; height: 100% }*/
+		</style>
+		<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+	</head>
+	<body>
+		<script src="https://rawgithub.com/mrdoob/three.js/master/build/three.js"></script>
+		<script src="https://rawgithub.com/mrdoob/stats.js/master/build/stats.min.js"></script>
+		<script>
+
+		// set up the scene n stuff
+
+		var scene = new THREE.Scene();
+		scene.fog = new THREE.Fog( 0x143768, 1, 3 );
+		// scene.fog = new THREE.Fog( 0x220022, 1, 3 );
+		var camera = new THREE.PerspectiveCamera(
+			70,
+			window.innerWidth / window.innerHeight,
+			0.1,
+			1000);
+
+		camera.position.z = 1.2;
+
+		var renderer = new THREE.WebGLRenderer({antialias:true});
+		renderer.setClearColor(0x143768);
+
+		renderer.setSize(window.innerWidth, window.innerHeight);
+		$('body').append(renderer.domElement);
+		$(window).resize(function() {
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			// controls.handleResize();
+		});
+
+		var play = false;
+
+		stats = new Stats();
+		stats.domElement.style.position = 'absolute';
+		stats.domElement.style.top = '0px';
+		$('body').append(stats.domElement);
+
+		var mouseX = mouseY = 0;
+
+		$('canvas').click(function() {
+			play = !play;
+		}).on('mousemove', function(e) {
+			mouseX = e.screenX;
+			mouseY = e.screenY;
+		});
+
+		var thetaX = (mouseY / window.innerHeight) * 2 * Math.PI;
+		var thetaY = (mouseX / window.innerWidth) * 2 * Math.PI;
+
+
+		var sign = function(x) { return x? x<0? -1 : 1 : 0; };
+
+		// water drop class
+		function WaterDrop() {
+			this.size = 0.8;
+			this.detail = 10;
+			// this.geometry = new THREE.TorusGeometry(0.8, 0.2, 16, 50);
+			// this.geometry = new THREE.IcosahedronGeometry(1,3);
+			this.geometry = new THREE.CubeGeometry(
+				this.size,
+				this.size,
+				this.size,
+				this.detail,
+				this.detail,
+				this.detail);
+
+			this.geometry.mergeVertices();
+
+			this.material = new THREE.MeshBasicMaterial({color: 0x87c9ff, wireframe: true });
+			// this.material = new THREE.MeshBasicMaterial({color: 0xff00ff, wireframe: true });
+			this.mesh = new THREE.Mesh(this.geometry, this.material);
+
+			this.addNoise = function(magnitude) {
+				// introduce some noise
+				for (var i = 0; i<this.geometry.vertices.length; i++) {
+					// this.geometry.vertices[i].y += magnitude * (Math.random() - 0.5);
+					// this.geometry.vertices[i].x += magnitude * (Math.random() - 0.5);
+					// this.geometry.vertices[i].z += magnitude * (Math.random() - 0.5);
+
+					// geom.vertices[i].y *= 0.4;
+					// geom.vertices[i].x *= 0.4;
+				}
+				this.mesh.geometry.verticesNeedUpdate = true;
+			}
+
+			// maps vertices to all neighboring vertices
+			this.neighborMap = new Array(this.geometry.vertices.length);
+
+			this.dx = new Array(this.geometry.vertices.length);
+			this.dy = new Array(this.geometry.vertices.length);
+			this.dz = new Array(this.geometry.vertices.length);
+
+			this.sortNeighbors = function(pairs) {
+				var count = pairs.length/2;
+				var neighbors = Array(count);
+
+				neighbors[0] = pairs[0];
+				neighbors[1] = pairs[1];
+
+				var position = 1;
+
+				// search for a pair containing the current vertex, and add its comrade to the end of the cycle
+				while(position < count - 1) {
+					// we can skip the first 2 since they've already been added
+					for(var j=2; j<pairs.length; j+=2) {
+						if(pairs[j] === neighbors[position])
+							neighbors[++position] = pairs[j+1];
+						else if(pairs[j+1] === neighbors[position])
+							neighbors[++position] = pairs[j];
+						else
+							continue;
+						pairs[j] = pairs[j+1] = null;	// once it's added to the cycle, we don't want to find it again
+						break;
+					}
+				}
+				return neighbors;
+			};
+
+
+			// build a data structure mapping a vertex to an ordered array of the surrounding vertices
+			this.buildNeighborMap = function() {
+
+
+				this.neighborMap = Array(this.geometry.vertices.length);
+
+				for(var i=0; i<this.geometry.vertices.length; i++) {
+					this.neighborMap[i] = new Array();
+					this.dx[i] = 0;
+					this.dy[i] = 0;
+					this.dz[i] = 0;
+				}
+
+
+				// for each vertex, create a list of vertex pairs for each neighboring triangle
+				for(var i=0; i<this.geometry.faces.length; i++) {
+					var face = this.geometry.faces[i];
+
+					// no need for nested arrays; every 2 items is a pair
+					this.neighborMap[face.a].push(this.geometry.vertices[face.b], this.geometry.vertices[face.c]);
+					this.neighborMap[face.b].push(this.geometry.vertices[face.a], this.geometry.vertices[face.c]);
+					this.neighborMap[face.c].push(this.geometry.vertices[face.a], this.geometry.vertices[face.b]);
+
+				}
+
+				// replace vertex pair groups with ordered vertex cycles
+				for(var i=0; i<this.neighborMap.length; i++)
+					this.neighborMap[i] = this.sortNeighbors(this.neighborMap[i]);
+			};
+
+
+			/*this.computeLengths = function() {
+
+				for (var i=0; i<this.geometry.faces.length; i++) {
+					var face = this.geometry.faces[i];
+
+					face.a.clone()
+
+					// if (face.a > face.b)
+
+					// else
+			}
+
+			}*/
+
+
+			this.animate = function() {
+				for(var i=0; i<this.geometry.vertices.length; i++) {
+					var A = this.geometry.vertices[i];
+
+					var cycle = this.neighborMap[i];
+
+					var netForce = new THREE.Vector3(0,0,0);
+
+					for(var j=0; j<cycle.length; j++) {
+						// compute relative vectors between the 3 vertices
+						var BtoA = A.clone().sub(cycle[j]);
+
+						var BtoC = cycle[(j+1)%cycle.length].clone().sub(cycle[j]);
+
+						var force = BtoA
+							.clone()
+							.projectOnVector(BtoC)
+							.sub(BtoA);
+
+						netForce.add(force.multiplyScalar(BtoC.length()));
+					}
+
+
+					/*
+					var neighborFaces = this.neighborMap[i];
+					var netForce = new THREE.Vector3(0,0,0);
+
+					// var vertexArea = 0;
+
+					for(var j=0; j<neighborFaces.length; j++) {
+						// compute relative vectors between the 3 vertices
+						var BtoA = A.clone().sub(neighborFaces[j][0]);
+						// var BtoA = neighborFaces[j][0].clone().sub(A);
+						var BtoC = neighborFaces[j][1].clone().sub(neighborFaces[j][0]);
+
+
+						var force = BtoA.clone()
+								.projectOnVector(BtoC)
+								.sub(BtoA);
+
+						netForce.add(force.multiplyScalar(BtoC.length()));
+
+						// netForce
+						// vertexArea += BtoA.cross(BtoC).length();
+					}
+					*/
+
+					// netForce.add(netForce.clone().setLength(vertexArea * equivalentAreaFactor));
+
+					netForce.multiplyScalar(8*netForce.length());
+					this.dx[i] += netForce.x;
+					this.dy[i] += netForce.y;
+					this.dz[i] += netForce.z;
+
+					if(this.mcfHelperEnabled) {
+						this.mcfHelperGeom.vertices[2*i] = A;
+						this.mcfHelperGeom.vertices[2*i + 1] = A.clone().add(netForce.multiplyScalar(1000));
+					}
+					this.dx[i] *= 0.99;
+					this.dy[i] *= 0.99;
+					this.dz[i] *= 0.99;
+				}
+
+				for (var i=0; i<this.geometry.vertices.length; i++) {
+					var A = this.geometry.vertices[i];
+					// apply dV to vertex
+					A.x += this.dx[i];
+					A.y += this.dy[i];
+					A.z += this.dz[i];
+
+					// shitty volume correction
+					A.x *= 1.014;
+					A.y *= 1.014;
+					A.z *= 1.014;
+				}
+
+				// var vertexCount = this.geometry.vertices.length;
+				// for(var i=0; i<vertexCount; i++) {
+				// 	var A = this.geometry.vertices[i];
+				// 	var neighborFaces = this.neighborMap[i];
+				// 	for(var j=0; j<neighborFaces.length; j++) {
+				// 		var B = this.geometry.vertices[neighborFaces[j][0]];
+				// 		var C = this.geometry.vertices[neighborFaces[j][1]];
+
+
+
+				// 		if(
+				// 		neighborFaces[j][0]
+
+				// }
+
+				this.mesh.geometry.verticesNeedUpdate = true;
+
+				if(this.mcfHelperEnabled)
+					this.mcfHelperObject.geometry.verticesNeedUpdate = true;
+			}
+
+			this.mcfHelperEnabled = true;
+			this.mcfMaterial = new THREE.LineBasicMaterial({color: 0x00ff00});
+			this.mcfHelperGeom = new THREE.Geometry();
+			this.mcfHelperObject = new THREE.Line(this.mcfHelperGeom, this.mcfMaterial);
+			this.mcfHelperObject.type = THREE.LinePieces;
+
+			this.mcfHelperGeom.vertices = new Array(this.geometry.vertices.length * 2);
+			for(var i=0; i<this.mcfHelperGeom.vertices.length; i++)
+				this.mcfHelperGeom.vertices[i] = new THREE.Vector3(0,0,0);
+		}
+
+		var drop = new WaterDrop();
+		drop.addNoise(0.06);
+		drop.buildNeighborMap();
+
+		scene.add(drop.mesh);
+
+		// if(drop.mcfHelperEnabled)
+		// 	scene.add(drop.mcfHelperObject);
+
+
+		// vertexNormals = new Array(geom.vertices.length);
+
+		// var equivalentAreaFactor = 1/(Math.PI * 2 * 1);	// A = 2pi * r * h
+
+		var frame = 0;
+		// var mcfLineLength = 0;
+
+		var render = function() {
+
+			frame++;
+			// mcfLineLength = 0.05 * Math.sin(frame / 30) + 0.05;
+
+			if(play && frame % 2 == 0) {
+				drop.animate();
+			}
+			// camera.fov = 10 + (mouseX / window.innerWidth) * 60;
+			// camera.updateProjectionMatrix();
+
+			mouseThetaX = (mouseY / window.innerHeight) * 2 * Math.PI;
+			mouseThetaY = (mouseX / window.innerWidth) * 2 * Math.PI;
+
+			if(frame == 1) {
+				drop.mesh.rotation.x = mouseThetaX;
+				drop.mesh.rotation.y = mouseThetaY;
+				if(drop.mcfHelperEnabled) {
+					drop.mcfHelperObject.rotation.x = mouseThetaX;
+					drop.mcfHelperObject.rotation.y = mouseThetaY;
+				}
+			} else {
+				dThetaX = (mouseThetaX - thetaX) / 16;
+				dThetaY = (mouseThetaY - thetaY) / 16;
+				thetaX += dThetaX;
+				thetaY += dThetaY;
+				drop.mesh.rotation.x = thetaX;
+				drop.mesh.rotation.y = thetaY;
+
+				if(drop.mcfHelperEnabled) {
+					drop.mcfHelperObject.rotation.x = thetaX;
+					drop.mcfHelperObject.rotation.y = thetaY;
+				}
+			}
+
+
+			requestAnimationFrame(render);
+			renderer.render(scene, camera);
+			stats.update();
+		}
+		render();
+
+		</script>
+	</body>
+</html>
