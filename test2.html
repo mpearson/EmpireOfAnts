@@ -23,7 +23,7 @@
 			0.1,
 			1000);
 
-		camera.position.z = 1.5;
+		camera.position.z = 1.2;
 
 		var renderer = new THREE.WebGLRenderer({antialias:true});
 		renderer.setClearColor(0x143768);
@@ -92,92 +92,44 @@
 				this.mesh.geometry.verticesNeedUpdate = true;
 			}
 
-			this.neighborMap = null;
-			this.faceMap = null;
+			// maps vertices to all neighboring vertices
+			this.neighborMap = new Array(this.geometry.vertices.length);
 
 			this.dx = new Array(this.geometry.vertices.length);
 			this.dy = new Array(this.geometry.vertices.length);
 			this.dz = new Array(this.geometry.vertices.length);
 
-			this.sortNeighbors = function(pairs) {
-				var count = pairs.length/2;
-				var neighbors = Array(count);
-
-				neighbors[0] = pairs[0];
-				neighbors[1] = pairs[1];
-
-				var position = 1;
-
-				// search for a pair containing the current vertex, and add its comrade to the end of the cycle
-				while(position < count - 1) {
-					// we can skip the first 2 since they've already been added
-					for(var j=2; j<pairs.length; j+=2) {
-						if(pairs[j] === neighbors[position])
-							neighbors[++position] = pairs[j+1];
-						else if(pairs[j+1] === neighbors[position])
-							neighbors[++position] = pairs[j];
-						else
-							continue;
-						pairs[j] = pairs[j+1] = null;	// once it's added to the cycle, we don't want to find it again
-						break;
-					}
-				}
-				return neighbors;
-			};
-
-			// build a data structure mapping a vertex to an ordered array of the surrounding vertices
 			this.buildNeighborMap = function() {
-				this.neighborMap = Array(this.geometry.vertices.length);
-				this.faceMap = Array(this.geometry.vertices.length);
 
 				for(var i=0; i<this.geometry.vertices.length; i++) {
+					// this.neighborMap[i] = [geom.faces[i].a, geom.faces[i]
 					this.neighborMap[i] = new Array();
-					this.faceMap[i] = new Array();
 					this.dx[i] = 0;
 					this.dy[i] = 0;
 					this.dz[i] = 0;
 				}
-				// for each vertex, create a list of vertex pairs for each neighboring triangle
+
 				for(var i=0; i<this.geometry.faces.length; i++) {
 					var face = this.geometry.faces[i];
-					// no need for nested arrays; every 2 items is a pair
-					this.neighborMap[face.a].push(face.b, face.c);
-					this.neighborMap[face.b].push(face.a, face.c);
-					this.neighborMap[face.c].push(face.a, face.b);
-
-					this.faceMap[face.a].push(face);
-					this.faceMap[face.b].push(face);
-					this.faceMap[face.c].push(face);
+					// for each vertex of each face, find the other 2 vertices
+					this.neighborMap[face.a].push([
+						this.geometry.vertices[Math.max(face.b, face.c)],
+						this.geometry.vertices[Math.min(face.b, face.c)]
+					]);
+					this.neighborMap[face.b].push([
+						this.geometry.vertices[Math.max(face.a, face.c)],
+						this.geometry.vertices[Math.min(face.a, face.c)]
+					]);
+					this.neighborMap[face.c].push([
+						this.geometry.vertices[Math.max(face.a, face.b)],
+						this.geometry.vertices[Math.min(face.a, face.b)]
+					]);
 				}
-				// replace vertex pair groups with ordered vertex cycles
-				for(var i=0; i<this.neighborMap.length; i++)
-					this.neighborMap[i] = this.sortNeighbors(this.neighborMap[i]);
-			};
-
-			// calculate the weighted sum of forces from each neighboring vertex
-			// ...the "surface tension" if you will
-			this.computeSurfaceTension = function(A, cycle) {
-				var netForce = new THREE.Vector3(0,0,0);
-
-				for(var n=0; n<cycle.length; n++) {
-					// compute relative vectors between the 3 vertices
-					var BtoA = A.clone().sub(this.geometry.vertices[cycle[n]]);
-
-					var BtoC = this.geometry.vertices[cycle[(n+1)%cycle.length]]
-						.clone()
-						.sub(this.geometry.vertices[cycle[n]]);
-
-					var force = BtoA
-						.clone()
-						.projectOnVector(BtoC)
-						.sub(BtoA);
-
-					netForce.add(force.multiplyScalar(BtoC.length()));
-				}
-				return netForce;
-			};
+			}
 
 			/*this.computeLengths = function() {
+
+
 
 				for (var i=0; i<this.geometry.faces.length; i++) {
 					var face = this.geometry.faces[i];
@@ -187,130 +139,92 @@
 					// if (face.a > face.b)
 
 					// else
+
+
+
 			}
 
-			}*/
+			this.animate = function() {
 
-			// this.removeVertex(vIndex) {
-			// 	for(var i=vIndex; i<this.neighborMap.length
+				for (var i=0; i<this.geometry.faces.length; i++) {
+					var face = this.geometry.faces[i];
 
-
-
-			// }
-
-/*
-			this.mergeVertices = function(vIndex1, vIndex2) {
-				var cycle1 =
-				var cycle2 = this.neighborMap[vIndex2];
-
-				var faces1 = this.faceMap[vIndex1];
-				var faces2 = this.faceMap[vIndex2];
-
-				var A = this.geometry.vertices[vIndex1];
-				var B = this.geometry.vertices[vIndex2];
-
-				// move both vertices to the half way point between them
-				var delta = B.sub(A).multiplyScalar(0.5);
-				A.add(delta);
-				B.sub(delta);
+					face.a =
+					// compute relative vectors between the 3 vertices
+					var BtoA = A.clone().sub(neighborFaces[j][0]);
+					// var BtoA = neighborFaces[j][0].clone().sub(A);
+					var BtoC = neighborFaces[j][1].clone().sub(neighborFaces[j][0]);
 
 
-				for(var i=0; i<faces1.length; i++) {
-					for(var j=0; j<faces2.length; j++) {
-						if(faces1[i] === faces2[j])
+					var force = BtoA.clone()
+							.projectOnVector(BtoC)
+							.sub(BtoA);
 
-
-				// for(var i=0; i<this.geometry.faces.length; i++) {
-				// 	this.geometry.faces[i]
-
+					netForce.add(force.multiplyScalar(BtoC.length()));
 
 				}
 
+			}*/
 
-			};
-*/
 
-			this.evolve = function() {
-				var vertices = this.geometry.vertices;
-				var i, j, k, iLength = vertices.length, jLength, kLength;
-				var A, B, netForce, neighbors, faces, face;
 
-				var mergeThreshold = 0.001;
+			this.animate = function() {
+				for(var i=0; i<this.geometry.vertices.length; i++) {
+					var A = this.geometry.vertices[i];
 
-				for(i=0; i<iLength; i++) {
-					A = vertices[i];
-					neighbors = this.neighborMap[i];
+					var neighborFaces = this.neighborMap[i];
+					var netForce = new THREE.Vector3(0,0,0);
 
-					netForce = this.computeSurfaceTension(A, neighbors);
+					var vertexArea = 0;
 
-					netForce.multiplyScalar(0.05*netForce.length());
+					for(var j=0; j<neighborFaces.length; j++) {
+						// compute relative vectors between the 3 vertices
+						var BtoA = A.clone().sub(neighborFaces[j][0]);
+						// var BtoA = neighborFaces[j][0].clone().sub(A);
+						var BtoC = neighborFaces[j][1].clone().sub(neighborFaces[j][0]);
+
+
+						var force = BtoA.clone()
+								.projectOnVector(BtoC)
+								.sub(BtoA);
+
+						netForce.add(force.multiplyScalar(BtoC.length()));
+
+						// netForce
+						// vertexArea += BtoA.cross(BtoC).length();
+					}
+
+					// netForce.add(netForce.clone().setLength(vertexArea * equivalentAreaFactor));
+
+					netForce.multiplyScalar(4*netForce.length());
 					this.dx[i] += netForce.x;
 					this.dy[i] += netForce.y;
 					this.dz[i] += netForce.z;
 
 					if(this.mcfHelperEnabled) {
 						this.mcfHelperGeom.vertices[2*i] = A;
-						this.mcfHelperGeom.vertices[2*i + 1] = A.clone().add(netForce.multiplyScalar(20000));
+						this.mcfHelperGeom.vertices[2*i + 1] = A.clone().add(netForce.multiplyScalar(1000));
 					}
-					this.dx[i] *= 0.992;
-					this.dy[i] *= 0.992;
-					this.dz[i] *= 0.992;
+					this.dx[i] *= 0.97;
+					this.dy[i] *= 0.97;
+					this.dz[i] *= 0.97;
 				}
 
-				var mergeTargets = [];
-
-				for (i=0; i<iLength; i++) {
-					A = vertices[i];
-					// apply dV to vertex
+				for (var i=0; i<this.geometry.vertices.length; i++) {
+					var A = this.geometry.vertices[i];
 					A.x += this.dx[i];
 					A.y += this.dy[i];
 					A.z += this.dz[i];
 
-					// shitty volume correction
-					A.x *= 1.0003;
-					A.y *= 1.0003;
-					A.z *= 1.0003;
-
-					// loop through the neighboring vertices to see if any of them are too close
-
-					// find the 2 faces faces sharing A and B (F1 and F2)
-					// find the far vertices of F1 and F2 (C1, C2)
-					// remove F1 and F2 from the faceMap of C1 and C2
-					//
-
-					//
-
-					// replace A with B in A's neighborMap and the faces in A's faceMap
-
-					// finally, move B half way towards where A was
-
-/*
-					neighbors = this.neighborMap[i];
-					for(j=0, jLength = neighbors.length; j<jLength; j++) {
-						B = vertices[neighbors[j]];
-
-						if(A.clone().sub(B).lengthSq() < mergeThreshold) {
-							// we must now eliminate vertex A, and replace all references to it with B
-							faces = this.faceMap[i];
-							for(k=0, kLength = faces.length; k<kLength; k++) {
-								face = [faces[k].a, faces[k].b, faces[k].c];
-
-								if face.indexOf(i, neighbors[j]
-
-								if(
-
-
-
-
-							// mergeTargets[i] = cycle[j];
-							break;
-						}
-
-					}*/
+					A.x *= 1.0019;
+					A.y *= 1.0019;
+					A.z *= 1.0019;
 				}
-			};
+				this.mesh.geometry.verticesNeedUpdate = true;
 
-
+				if(this.mcfHelperEnabled)
+					this.mcfHelperObject.geometry.verticesNeedUpdate = true;
+			}
 
 			this.mcfHelperEnabled = true;
 			this.mcfMaterial = new THREE.LineBasicMaterial({color: 0x00ff00});
@@ -345,17 +259,8 @@
 			frame++;
 			// mcfLineLength = 0.05 * Math.sin(frame / 30) + 0.05;
 
-			if(play) {//&& frame % 2 == 0) {
-				drop.evolve();
-				drop.evolve();
-				drop.evolve();
-				drop.evolve();
-				drop.evolve();
-
-				drop.geometry.verticesNeedUpdate = true;
-
-				if(this.mcfHelperEnabled)
-					this.mcfHelperObject.geometry.verticesNeedUpdate = true;
+			if(play && frame % 2 == 0) {
+				drop.animate();
 			}
 			// camera.fov = 10 + (mouseX / window.innerWidth) * 60;
 			// camera.updateProjectionMatrix();
