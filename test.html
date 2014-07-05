@@ -188,10 +188,16 @@
 
 					// compute relative vectors between the 3 vertices
 					BA = A.clone().sub(B);
-					BC = C.clone().sub(B);
-					force = BA.clone().projectOnVector(BC).sub(BA);
+					// BC = C.clone().sub(B);
 
-					netForce.add(force.multiplyScalar(BC.length()));
+					// AC = C.clone().sub(A);
+					// AB = BA.clone().multiplyScalar(-1);
+
+					// force = BA.clone().projectOnVector(BC).sub(BA);
+
+					// netForce.add(force.multiplyScalar(BC.length()));
+					// netForce.add(force.setLength(AC.angleTo(BC)));
+					netForce.sub(BA);
 				}
 				return netForce;
 			};
@@ -221,8 +227,8 @@
 
 			this.evolve = function() {
 				var vertices = this.geometry.vertices;
-				var i, j, k, vertexCount = vertices.length;
-				var A, B, v, f, neighbors;
+				var i, j, k, neighborCount, vertexCount = vertices.length;
+				var A, B, v, f, f2, neighbors;
 
 
 
@@ -232,11 +238,18 @@
 					neighbors = this.neighborMap[i];
 
 					f = this.computeSurfaceTension(A, neighbors);
-					v.add(f.multiplyScalar(0.001));
+					v.add(f.multiplyScalar(0.0005));
+
+					neighborCount = neighbors.length;
+					f2 = f.clone().multiplyScalar(-1/neighborCount);
+					for(j=0; j<neighborCount; j++)
+						this.velocity[neighbors[j]].add(f2);
+
+					// this.velocity[i] = f.multiplyScalar(0.000001);
 
 					if(this.mcfHelperEnabled) {
 						this.mcfHelperGeom.vertices[2 * i] = A.clone();
-						this.mcfHelperGeom.vertices[2 * i + 1] = A.clone().add(f.multiplyScalar(20000));
+						this.mcfHelperGeom.vertices[2 * i + 1] = A.clone().add(f.multiplyScalar(2000));
 
 						this.velocityHelperGeom.vertices[2 * i] = A.clone();
 						this.velocityHelperGeom.vertices[2 * i + 1] = A.clone().add(v.clone().multiplyScalar(200));
@@ -247,21 +260,18 @@
 				var merged = [];
 				var neighborCount;
 				var BA;
-				var mergeThreshold = 0.0005;
+				var mergeThreshold = 0.005;
 
 				for (i=0; i<vertexCount; i++) {
 					A = vertices[i];
-					v = this.velocity[i];
-
-					v.multiplyScalar(0.99);
-
 					// apply dV to vertex
-					A.add(v);
-
-
+					A.add(this.velocity[i].multiplyScalar(0.995));
 					// shitty volume correction
-					A.multiplyScalar(1.0005);
+					// A.multiplyScalar(1.00005);
 
+				}
+				for (i=0; i<vertexCount; i++) {
+					A = vertices[i];
 					//
 
 					// find the 2 faces faces sharing A and B (F1 and F2)
@@ -284,18 +294,18 @@
 
 						BA = A.clone().sub(B);
 
-						if(BA.lengthSq() < mergeThreshold) {
+						if(BA.lengthManhattan() < mergeThreshold) {
 							// we must now eliminate vertex A, and replace all references to it with B
 							mergeTargets[i] = neighbors[j];
 							merged.push(neighbors[j]);
 
 							// move B half way to A
-							B.add(BA.multiplyScalar(0.5));
+							// B.add(BA.multiplyScalar(0.5));
 
 							// this.replaceNeighbor(i, B);
 
 
-							break;
+							// break;
 						}
 					}
 				}
@@ -327,7 +337,7 @@
 				}
 
 				// delete the old vertices starting at the end
-				merged.sort();
+				// merged.sort();
 				for(i=merged.length-1; i>=0; i--) {
 					console.log('removing vertex ' + merged[i]);
 					vertices[merged[i]].a = -1000;
@@ -335,7 +345,7 @@
 					vertices[merged[i]].c = -1000;
 					// vertices.splice(merged[i], 1);
 				}
-				// this.geometry.elementsNeedUpdate = true;
+				this.geometry.elementsNeedUpdate = true;
 				// this.geometry.buffersNeedUpdate = true;
 				this.buildNeighborMap();
 
@@ -371,7 +381,7 @@
 
 		if(drop.mcfHelperEnabled) {
 			scene.add(drop.mcfHelperObject);
-			scene.add(drop.velocityHelperObject);
+			// scene.add(drop.velocityHelperObject);
 		}
 
 
