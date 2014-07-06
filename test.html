@@ -53,6 +53,13 @@
 			mouseY = e.screenY;
 		});
 
+		$(window).on('keyup', function(e) {
+			if(e.keyCode == 82)
+				reset();
+
+
+		});
+
 		var thetaX = (mouseY / window.innerHeight) * 2 * Math.PI;
 		var thetaY = (mouseX / window.innerWidth) * 2 * Math.PI;
 
@@ -62,16 +69,22 @@
 		// water drop class
 		function WaterDrop() {
 			this.size = 0.8;
-			this.detail = 10;
+			this.detail = 8;
 			// this.geometry = new THREE.TorusGeometry(0.8, 0.2, 16, 50);
 			// this.geometry = new THREE.IcosahedronGeometry(1,3);
-			this.geometry = new THREE.CubeGeometry(
+			this.geometry = new THREE.BoxGeometry(
 				this.size,
 				this.size,
 				this.size,
 				this.detail,
 				this.detail,
 				this.detail);
+				// this.size,
+				// this.size/2,
+				// this.size/2,
+				// this.detail,
+				// this.detail/2,
+				// this.detail/2);
 
 			this.geometry.mergeVertices();
 
@@ -80,11 +93,12 @@
 			this.mesh = new THREE.Mesh(this.geometry, this.material);
 
 			this.addNoise = function(magnitude) {
+				return;
 				// introduce some noise
 				for (var i=0; i<this.geometry.vertices.length; i++) {
-					// this.geometry.vertices[i].y += magnitude * (Math.random() - 0.5);
-					// this.geometry.vertices[i].x += magnitude * (Math.random() - 0.5);
-					// this.geometry.vertices[i].z += magnitude * (Math.random() - 0.5);
+					this.geometry.vertices[i].y += magnitude * (Math.random() - 0.5);
+					this.geometry.vertices[i].x += magnitude * (Math.random() - 0.5);
+					this.geometry.vertices[i].z += magnitude * (Math.random() - 0.5);
 
 					// geom.vertices[i].y *= 0.4;
 					// geom.vertices[i].x *= 0.4;
@@ -100,8 +114,8 @@
 				this.velocity[i] = new THREE.Vector3(0,0,0);
 
 			this.sortNeighbors = function(pairs) {
-				if(pairs.length === 0)
-					return pairs;
+				if(pairs.length < 2)
+					return [];
 
 				var i, j, count = pairs.length/2, count2 = pairs.length;
 				var neighbors = Array(count);
@@ -112,7 +126,7 @@
 				var position = 1;
 
 				// search for a pair containing the current vertex, and add its comrade to the end of the array
-				while(position < count - 1) {
+				for(i=0; i < count; i++) {
 					// we can skip the first 2 since they've already been added
 					for(j = 2; j < count2; j += 2) {
 						if(pairs[j] === neighbors[position])
@@ -144,6 +158,11 @@
 				// for each vertex, create a list of vertex pairs for each neighboring triangle
 				for(i=0, count=faces.length; i<count; i++) {
 					face = faces[i];
+					if(face.a === face.b) {	// no degenerates!
+						console.log('skipping degenerate scum');
+						continue;
+					}
+
 					// no need for nested arrays; every 2 items is a pair
 					neighborMap[face.a].push(face.b, face.c);
 					neighborMap[face.b].push(face.a, face.c);
@@ -155,7 +174,7 @@
 				}
 				// replace vertex pair groups with ordered vertex cycles
 				for(i=0, count=vertices.length; i<count; i++) {
-					if(vertices[i].a === -1000)
+					if(vertices[i].a == -1000)
 						neighborMap[i] = [];
 					else
 						neighborMap[i] = this.sortNeighbors(neighborMap[i]);
@@ -185,9 +204,10 @@
 				for(n=0, count=neighbors.length; n<count; n++) {
 					B = vertices[neighbors[n]];
 					C = vertices[neighbors[(n + 1) % count]];
+					// C = vertices[neighbors[(count + n - 1) % count]];
 
 					// compute relative vectors between the 3 vertices
-					BA = A.clone().sub(B);
+					BA = A.clone().sub(B); //.normalize();
 					// BC = C.clone().sub(B);
 
 					// AC = C.clone().sub(A);
@@ -197,6 +217,10 @@
 
 					// netForce.add(force.multiplyScalar(BC.length()));
 					// netForce.add(force.setLength(AC.angleTo(BC)));
+
+					// var len = BA.length();
+					// netForce.add(BA.multiplyScalar((0.08 - len) / len));
+					// netForce.add(force);
 					netForce.sub(BA);
 				}
 				return netForce;
@@ -238,10 +262,10 @@
 					neighbors = this.neighborMap[i];
 
 					f = this.computeSurfaceTension(A, neighbors);
-					v.add(f.multiplyScalar(0.0005));
+					v.add(f.multiplyScalar(0.0003));
 
 					neighborCount = neighbors.length;
-					f2 = f.clone().multiplyScalar(-1/neighborCount);
+					f2 = f.clone().multiplyScalar(-1.01/neighborCount);
 					for(j=0; j<neighborCount; j++)
 						this.velocity[neighbors[j]].add(f2);
 
@@ -249,7 +273,7 @@
 
 					if(this.mcfHelperEnabled) {
 						this.mcfHelperGeom.vertices[2 * i] = A.clone();
-						this.mcfHelperGeom.vertices[2 * i + 1] = A.clone().add(f.multiplyScalar(2000));
+						this.mcfHelperGeom.vertices[2 * i + 1] = A.clone().add(f.multiplyScalar(20000));
 
 						this.velocityHelperGeom.vertices[2 * i] = A.clone();
 						this.velocityHelperGeom.vertices[2 * i + 1] = A.clone().add(v.clone().multiplyScalar(200));
@@ -260,16 +284,18 @@
 				var merged = [];
 				var neighborCount;
 				var BA;
-				var mergeThreshold = 0.005;
+				var mergeThreshold = 0.05;
 
 				for (i=0; i<vertexCount; i++) {
 					A = vertices[i];
 					// apply dV to vertex
-					A.add(this.velocity[i].multiplyScalar(0.995));
+					A.add(this.velocity[i].multiplyScalar(0.99));
 					// shitty volume correction
-					// A.multiplyScalar(1.00005);
+					A.multiplyScalar(1.000003);
 
 				}
+				// console.debug("evolving!");
+				// return;
 				for (i=0; i<vertexCount; i++) {
 					A = vertices[i];
 					//
@@ -280,7 +306,8 @@
 					//
 
 					// replace A with B in A's neighborMap and the faces in A's faceMap
-
+					if(merged.indexOf(i) > -1)
+						continue;
 
 					neighbors = this.neighborMap[i];
 
@@ -297,6 +324,7 @@
 						if(BA.lengthManhattan() < mergeThreshold) {
 							// we must now eliminate vertex A, and replace all references to it with B
 							mergeTargets[i] = neighbors[j];
+							merged.push(i);
 							merged.push(neighbors[j]);
 
 							// move B half way to A
@@ -373,17 +401,26 @@
 			}
 		}
 
-		var drop = new WaterDrop();
-		drop.addNoise(0.06);
-		drop.buildNeighborMap();
 
-		scene.add(drop.mesh);
+		var drop;
 
-		if(drop.mcfHelperEnabled) {
-			scene.add(drop.mcfHelperObject);
-			// scene.add(drop.velocityHelperObject);
+		function reset() {
+			play = false;
+			if(drop)
+				scene.remove(drop.mesh);
+			drop = new WaterDrop();
+
+			drop.addNoise(0.06);
+			drop.buildNeighborMap();
+
+			scene.add(drop.mesh);
+
+			if(drop.mcfHelperEnabled) {
+				scene.add(drop.mcfHelperObject);
+				// scene.add(drop.velocityHelperObject);
+			}
 		}
-
+		reset();
 
 		// vertexNormals = new Array(geom.vertices.length);
 
