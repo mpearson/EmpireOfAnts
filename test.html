@@ -93,7 +93,7 @@
 			this.mesh = new THREE.Mesh(this.geometry, this.material);
 
 			this.addNoise = function(magnitude) {
-				return;
+				// return;
 				// introduce some noise
 				for (var i=0; i<this.geometry.vertices.length; i++) {
 					this.geometry.vertices[i].y += magnitude * (Math.random() - 0.5);
@@ -146,7 +146,7 @@
 			this.buildNeighborMap = function() {
 				var vertices = this.geometry.vertices;
 				var faces = this.geometry.faces;
-				var i, count, face;
+				var i, j, count, count2, face, neighbors;
 
 				var neighborMap = Array(count);
 				// this.faceMap = Array(iLength);
@@ -159,27 +159,44 @@
 				for(i=0, count=faces.length; i<count; i++) {
 					face = faces[i];
 					if(face.a === face.b) {	// no degenerates!
-						console.log('skipping degenerate scum');
 						continue;
 					}
 
 					// no need for nested arrays; every 2 items is a pair
-					neighborMap[face.a].push(face.b, face.c);
-					neighborMap[face.b].push(face.a, face.c);
-					neighborMap[face.c].push(face.a, face.b);
+
+					neighbors = neighborMap[face.a];
+					if(neighbors.indexOf(face.b) < 0)
+						neighbors.push(face.b);
+					if(neighbors.indexOf(face.c) < 0)
+						neighbors.push(face.c);
+					neighbors = neighborMap[face.b];
+					if(neighbors.indexOf(face.a) < 0)
+						neighbors.push(face.a);
+					if(neighbors.indexOf(face.c) < 0)
+						neighbors.push(face.c);
+					neighbors = neighborMap[face.c];
+					if(neighbors.indexOf(face.b) < 0)
+						neighbors.push(face.b);
+					if(neighbors.indexOf(face.a) < 0)
+						neighbors.push(face.a);
+
+					// neighborMap[face.a].push(face.b, face.c);
+					// neighborMap[face.b].push(face.a, face.c);
+					// neighborMap[face.c].push(face.a, face.b);
 
 					// this.faceMap[face.a].push(face);
 					// this.faceMap[face.b].push(face);
 					// this.faceMap[face.c].push(face);
 				}
-				// replace vertex pair groups with ordered vertex cycles
-				for(i=0, count=vertices.length; i<count; i++) {
-					if(vertices[i].a == -1000)
-						neighborMap[i] = [];
-					else
-						neighborMap[i] = this.sortNeighbors(neighborMap[i]);
 
-				}
+				// replace vertex pair groups with ordered vertex cycles
+				// for(i=0, count=vertices.length; i<count; i++) {
+				// 	if(vertices[i].a == -1000)
+				// 		neighborMap[i] = [];
+				// 	else
+				// 		neighborMap[i] = this.sortNeighbors(neighborMap[i]);
+
+				// }
 				this.neighborMap = neighborMap;
 			};
 
@@ -203,15 +220,17 @@
 
 				for(n=0, count=neighbors.length; n<count; n++) {
 					B = vertices[neighbors[n]];
-					C = vertices[neighbors[(n + 1) % count]];
+					// C = vertices[neighbors[(n + 1) % count]];
 					// C = vertices[neighbors[(count + n - 1) % count]];
 
 					// compute relative vectors between the 3 vertices
 					BA = A.clone().sub(B); //.normalize();
 					// BC = C.clone().sub(B);
 
-					// AC = C.clone().sub(A);
-					// AB = BA.clone().multiplyScalar(-1);
+					// AB = B.clone().sub(A);
+					// BC = C.clone().sub(B);
+
+					// force = AB.add(BC.multiplyScalar(0.5));
 
 					// force = BA.clone().projectOnVector(BC).sub(BA);
 
@@ -258,6 +277,9 @@
 
 				for(i=0; i<vertexCount; i++) {
 					A = vertices[i];
+					if(A.a === -1000)
+						continue;
+
 					v = this.velocity[i];
 					neighbors = this.neighborMap[i];
 
@@ -286,17 +308,17 @@
 				var BA;
 				var mergeThreshold = 0.05;
 
-				for (i=0; i<vertexCount; i++) {
+				for(i=0; i<vertexCount; i++) {
 					A = vertices[i];
 					// apply dV to vertex
-					A.add(this.velocity[i].multiplyScalar(0.99));
+					A.add(this.velocity[i].multiplyScalar(0.995));
 					// shitty volume correction
-					A.multiplyScalar(1.000003);
+					A.multiplyScalar(1.00005);
 
 				}
 				// console.debug("evolving!");
 				// return;
-				for (i=0; i<vertexCount; i++) {
+				for(i=0; i<vertexCount; i++) {
 					A = vertices[i];
 					//
 
@@ -312,7 +334,7 @@
 					neighbors = this.neighborMap[i];
 
 					// loop through the neighboring vertices to see if any of them are too close
-					for(j=0, neighborCount=neighbors.length; j<neighborCount; j++) {
+					for (j=0, neighborCount=neighbors.length; j<neighborCount; j++) {
 						// skip ones that have already been merged with another point
 						if(merged.indexOf(neighbors[j]) > -1)
 							continue;
@@ -366,11 +388,18 @@
 
 				// delete the old vertices starting at the end
 				// merged.sort();
-				for(i=merged.length-1; i>=0; i--) {
-					console.log('removing vertex ' + merged[i]);
-					vertices[merged[i]].a = -1000;
-					vertices[merged[i]].b = -1000;
-					vertices[merged[i]].c = -1000;
+				// for(i=merged.length-1; i>=0; i--) {
+				for(i=0; i<vertexCount; i++) {
+					// console.log('removing vertex ' + merged[i]);
+					if(mergeTargets[i] !== undefined) {
+						console.log('removing vertex ' + i);
+						vertices[i].a = -1000;
+						vertices[i].b = -1000;
+						vertices[i].c = -1000;
+						// vertices[merged[i]].a = -1000;
+						// vertices[merged[i]].b = -1000;
+						// vertices[merged[i]].c = -1000;
+					}
 					// vertices.splice(merged[i], 1);
 				}
 				this.geometry.elementsNeedUpdate = true;
@@ -410,7 +439,7 @@
 				scene.remove(drop.mesh);
 			drop = new WaterDrop();
 
-			drop.addNoise(0.06);
+			// drop.addNoise(0.06);
 			drop.buildNeighborMap();
 
 			scene.add(drop.mesh);
