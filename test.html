@@ -23,10 +23,12 @@
 			0.1,
 			1000);
 
-		camera.position.z = 1.3;
+		camera.position.z = 1.9;
 
 		var renderer = new THREE.WebGLRenderer({antialias:true});
+		// var renderer = new THREE.CanvasRenderer({antialias:true});
 		renderer.setClearColor(0x143768);
+		renderer.setClearColor(0x000000);
 
 		renderer.setSize(window.innerWidth, window.innerHeight);
 		$('body').append(renderer.domElement);
@@ -68,10 +70,8 @@
 
 		// water drop class
 		function WaterDrop() {
-			this.size = 0.8;
-			this.detail = 8;
-			// this.geometry = new THREE.TorusGeometry(0.8, 0.2, 16, 50);
-			// this.geometry = new THREE.IcosahedronGeometry(1,3);
+			this.size = 1;
+			this.detail = 16;
 			this.geometry = new THREE.BoxGeometry(
 				this.size,
 				this.size,
@@ -79,31 +79,23 @@
 				this.detail,
 				this.detail,
 				this.detail);
-				// this.size,
-				// this.size/2,
-				// this.size/2,
-				// this.detail,
-				// this.detail/2,
-				// this.detail/2);
+			// this.geometry = new THREE.TorusGeometry(0.8, 0.2, 16, 50);
+			// this.geometry = new THREE.IcosahedronGeometry(1,3);
 
 			this.geometry.mergeVertices();
 
-			this.material = new THREE.MeshBasicMaterial({color: 0x87c9ff, wireframe: true });
+			this.material = new THREE.MeshBasicMaterial({color: 0x447733, wireframe: true });
+			// this.material = new THREE.MeshBasicMaterial({color: 0x87c9ff, wireframe: true });
 			// this.material = new THREE.MeshBasicMaterial({color: 0xff00ff, wireframe: true });
 			this.mesh = new THREE.Mesh(this.geometry, this.material);
 
 			this.addNoise = function(magnitude) {
-				// return;
 				// introduce some noise
 				for (var i=0; i<this.geometry.vertices.length; i++) {
 					this.geometry.vertices[i].y += magnitude * (Math.random() - 0.5);
 					this.geometry.vertices[i].x += magnitude * (Math.random() - 0.5);
 					this.geometry.vertices[i].z += magnitude * (Math.random() - 0.5);
-
-					// geom.vertices[i].y *= 0.4;
-					// geom.vertices[i].x *= 0.4;
 				}
-				this.mesh.geometry.verticesNeedUpdate = true;
 			}
 
 			this.neighborMap = null;
@@ -112,6 +104,29 @@
 			this.velocity = new Array(this.geometry.vertices.length);
 			for(var i=0, count=this.geometry.vertices.length; i<count; i++)
 				this.velocity[i] = new THREE.Vector3(0,0,0);
+
+
+
+
+
+			this.mcfMaterial = new THREE.LineBasicMaterial({color: 0x00ff00});
+			this.mcfHelperGeom = new THREE.Geometry();
+			this.mcfHelperObject = new THREE.Line(this.mcfHelperGeom, this.mcfMaterial);
+			this.mcfHelperObject.type = THREE.LinePieces;
+
+			this.velocityMaterial = new THREE.LineBasicMaterial({color: 0xff0000});
+			this.velocityHelperGeom = new THREE.Geometry();
+			this.velocityHelperObject = new THREE.Line(this.velocityHelperGeom, this.velocityMaterial);
+			this.velocityHelperObject.type = THREE.LinePieces;
+
+			this.mcfHelperGeom.vertices = new Array(this.geometry.vertices.length * 2);
+			this.velocityHelperGeom.vertices = new Array(this.geometry.vertices.length * 2);
+			for(var i=0; i<this.mcfHelperGeom.vertices.length; i++) {
+				this.mcfHelperGeom.vertices[i] = new THREE.Vector3(0,0,0);
+				this.velocityHelperGeom.vertices[i] = new THREE.Vector3(0,0,0);
+			}
+
+
 
 			this.sortNeighbors = function(pairs) {
 				if(pairs.length < 2)
@@ -149,20 +164,15 @@
 				var i, j, count, count2, face, neighbors;
 
 				var neighborMap = Array(count);
-				// this.faceMap = Array(iLength);
 
 				for(i=0, count=vertices.length; i<count; i++)
 					neighborMap[i] = new Array();
-					// this.faceMap[i] = new Array();
 
 				// for each vertex, create a list of vertex pairs for each neighboring triangle
 				for(i=0, count=faces.length; i<count; i++) {
 					face = faces[i];
-					if(face.a === face.b) {	// no degenerates!
+					if(face.a === face.b)	// no degenerates!
 						continue;
-					}
-
-					// no need for nested arrays; every 2 items is a pair
 
 					neighbors = neighborMap[face.a];
 					if(neighbors.indexOf(face.b) < 0)
@@ -179,44 +189,17 @@
 						neighbors.push(face.b);
 					if(neighbors.indexOf(face.a) < 0)
 						neighbors.push(face.a);
-
-					// neighborMap[face.a].push(face.b, face.c);
-					// neighborMap[face.b].push(face.a, face.c);
-					// neighborMap[face.c].push(face.a, face.b);
-
-					// this.faceMap[face.a].push(face);
-					// this.faceMap[face.b].push(face);
-					// this.faceMap[face.c].push(face);
 				}
-
-				// replace vertex pair groups with ordered vertex cycles
-				// for(i=0, count=vertices.length; i<count; i++) {
-				// 	if(vertices[i].a == -1000)
-				// 		neighborMap[i] = [];
-				// 	else
-				// 		neighborMap[i] = this.sortNeighbors(neighborMap[i]);
-
-				// }
 				this.neighborMap = neighborMap;
 			};
-
-			// for each neighbor of vertex A (index i), replace A with B in their neighbor maps
-			// this.replaceNeighbor = function(i, B) {
-
-			// 	var neighbors = this.neighborMap[i];
-
-
-
-			// }
-
-
 
 			// calculate the weighted sum of forces from each neighboring vertex
 			// ...the "surface tension" if you will
 			this.computeSurfaceTension = function(A, neighbors) {
 				var vertices = this.geometry.vertices;
 				var netForce = new THREE.Vector3(0,0,0);
-				var n, count, B, C, BA, BC, force;
+				var n, count, B, C, BA, BC, force, totalLength = 0;
+
 
 				for(n=0, count=neighbors.length; n<count; n++) {
 					B = vertices[neighbors[n]];
@@ -225,6 +208,7 @@
 
 					// compute relative vectors between the 3 vertices
 					BA = A.clone().sub(B); //.normalize();
+					totalLength += BA.length();
 					// BC = C.clone().sub(B);
 
 					// AB = B.clone().sub(A);
@@ -242,36 +226,24 @@
 					// netForce.add(force);
 					netForce.sub(BA);
 				}
-				return netForce;
+				return netForce.divideScalar(totalLength / count);
 			};
 
-			/*this.computeLengths = function() {
 
-				for (var i=0; i<this.geometry.faces.length; i++) {
-					var face = this.geometry.faces[i];
+			// this.mcfHelperEnabled = true;
 
-					face.a.clone()
-
-					// if (face.a > face.b)
-
-					// else
-			}
-
-			}*/
-
-			// this.removeVertex(vIndex) {
-			// 	for(var i=vIndex; i<this.neighborMap.length
-
-
-
-			// }
-
+			this.shittyVolumeCorrection = 0.999;
+			this.forceFactor = 0.003;
+			this.dampingFactor = 0.97;
+			this.mergeThreshold = 0.05;
+			this.iterations = 1;
+			this.noiseFactor = 0.02;
 
 
 			this.evolve = function() {
 				var vertices = this.geometry.vertices;
 				var i, j, k, neighborCount, vertexCount = vertices.length;
-				var A, B, v, f, f2, neighbors;
+				var A, B, v, f, f2, neighbors, neighborIndex;
 
 
 
@@ -281,46 +253,45 @@
 						continue;
 
 					v = this.velocity[i];
-					neighbors = this.neighborMap[i];
 
-					f = this.computeSurfaceTension(A, neighbors);
-					v.add(f.multiplyScalar(0.0003));
-
-					neighborCount = neighbors.length;
-					f2 = f.clone().multiplyScalar(-1.01/neighborCount);
-					for(j=0; j<neighborCount; j++)
-						this.velocity[neighbors[j]].add(f2);
-
-					// this.velocity[i] = f.multiplyScalar(0.000001);
 
 					if(this.mcfHelperEnabled) {
 						this.mcfHelperGeom.vertices[2 * i] = A.clone();
-						this.mcfHelperGeom.vertices[2 * i + 1] = A.clone().add(f.multiplyScalar(20000));
+						this.mcfHelperGeom.vertices[2 * i + 1] = v.clone();	// store initial velocity for later
 
-						this.velocityHelperGeom.vertices[2 * i] = A.clone();
-						this.velocityHelperGeom.vertices[2 * i + 1] = A.clone().add(v.clone().multiplyScalar(200));
+						// this.velocityHelperGeom.vertices[2 * i] = A.clone();
+						// this.velocityHelperGeom.vertices[2 * i + 1] = A.clone().add(v.clone().multiplyScalar(200));
 					}
+
+
+					neighbors = this.neighborMap[i];
+
+					f = this.computeSurfaceTension(A, neighbors);
+					v.add(f.multiplyScalar(this.forceFactor));
+
+					neighborCount = neighbors.length;
+					f2 = f.clone().multiplyScalar(-1.02/neighborCount);
+					for(j=0; j<neighborCount; j++)
+						this.velocity[neighbors[j]].add(f2);
+
 				}
 
 				var mergeTargets = [];
 				var merged = [];
 				var neighborCount;
 				var BA;
-				var mergeThreshold = 0.05;
 
-				for(i=0; i<vertexCount; i++) {
-					A = vertices[i];
-					// apply dV to vertex
-					A.add(this.velocity[i].multiplyScalar(0.995));
-					// shitty volume correction
-					A.multiplyScalar(1.00005);
 
-				}
 				// console.debug("evolving!");
 				// return;
 				for(i=0; i<vertexCount; i++) {
 					A = vertices[i];
-					//
+					v = this.velocity[i];
+
+
+					if(this.mcfHelperEnabled) {
+						this.mcfHelperGeom.vertices[2 * i + 1] = this.mcfHelperGeom.vertices[2 * i + 1].sub(v);
+					}
 
 					// find the 2 faces faces sharing A and B (F1 and F2)
 					// find the far vertices of F1 and F2 (C1, C2)
@@ -335,19 +306,27 @@
 
 					// loop through the neighboring vertices to see if any of them are too close
 					for (j=0, neighborCount=neighbors.length; j<neighborCount; j++) {
+						neighborIndex = neighbors[j];
+
+
+
 						// skip ones that have already been merged with another point
-						if(merged.indexOf(neighbors[j]) > -1)
+						if(merged.indexOf(neighborIndex) > -1)
 							continue;
 
-						B = vertices[neighbors[j]];
+						B = vertices[neighborIndex];
 
 						BA = A.clone().sub(B);
 
-						if(BA.lengthManhattan() < mergeThreshold) {
+						if(BA.lengthManhattan() < this.mergeThreshold) {
 							// we must now eliminate vertex A, and replace all references to it with B
-							mergeTargets[i] = neighbors[j];
+							mergeTargets[i] = neighborIndex;
 							merged.push(i);
-							merged.push(neighbors[j]);
+							merged.push(neighborIndex);
+
+							// average the velocities
+							this.velocity[neighborIndex].add(v).multiplyScalar(0.5);
+							v.a = v.b = v.c = 0;
 
 							// move B half way to A
 							// B.add(BA.multiplyScalar(0.5));
@@ -357,6 +336,17 @@
 
 							// break;
 						}
+					}
+
+
+					// apply dV to vertex
+					A.add(this.velocity[i].multiplyScalar(this.dampingFactor));
+					// shitty volume correction
+					A.multiplyScalar(this.shittyVolumeCorrection);
+
+
+					if(this.mcfHelperEnabled) {
+						this.mcfHelperGeom.vertices[2 * i + 1] = this.mcfHelperGeom.vertices[2 * i + 1].multiplyScalar(-0.2).add(A);
 					}
 				}
 
@@ -380,27 +370,18 @@
 
 					// if this face is now degenerate, then erase it from this world
 					if(face.a === face.b || face.a === face.c || face.b == face.c) {
-						console.log('removing degenerate face ' + i + '('+face.a+','+face.b+','+face.c+')');
-						// faces.splice(i, 1);
+						// console.log('removing degenerate face ' + i + '('+face.a+','+face.b+','+face.c+')');
 						face.a = face.b = face.c = 0;
 					}
 				}
 
-				// delete the old vertices starting at the end
-				// merged.sort();
-				// for(i=merged.length-1; i>=0; i--) {
 				for(i=0; i<vertexCount; i++) {
-					// console.log('removing vertex ' + merged[i]);
 					if(mergeTargets[i] !== undefined) {
-						console.log('removing vertex ' + i);
+						// console.log('removing vertex ' + i);
 						vertices[i].a = -1000;
 						vertices[i].b = -1000;
 						vertices[i].c = -1000;
-						// vertices[merged[i]].a = -1000;
-						// vertices[merged[i]].b = -1000;
-						// vertices[merged[i]].c = -1000;
 					}
-					// vertices.splice(merged[i], 1);
 				}
 				this.geometry.elementsNeedUpdate = true;
 				// this.geometry.buffersNeedUpdate = true;
@@ -408,38 +389,23 @@
 
 			};
 
-
-
-			// this.mcfHelperEnabled = true;
-
-			this.mcfMaterial = new THREE.LineBasicMaterial({color: 0x00ff00});
-			this.mcfHelperGeom = new THREE.Geometry();
-			this.mcfHelperObject = new THREE.Line(this.mcfHelperGeom, this.mcfMaterial);
-			this.mcfHelperObject.type = THREE.LinePieces;
-
-			this.velocityMaterial = new THREE.LineBasicMaterial({color: 0xff0000});
-			this.velocityHelperGeom = new THREE.Geometry();
-			this.velocityHelperObject = new THREE.Line(this.velocityHelperGeom, this.velocityMaterial);
-			this.velocityHelperObject.type = THREE.LinePieces;
-
-			this.mcfHelperGeom.vertices = new Array(this.geometry.vertices.length * 2);
-			this.velocityHelperGeom.vertices = new Array(this.geometry.vertices.length * 2);
-			for(var i=0; i<this.mcfHelperGeom.vertices.length; i++) {
-				this.mcfHelperGeom.vertices[i] = new THREE.Vector3(0,0,0);
-				this.velocityHelperGeom.vertices[i] = new THREE.Vector3(0,0,0);
-			}
 		}
+
+
+
 
 
 		var drop;
 
 		function reset() {
 			play = false;
-			if(drop)
+			if(drop) {
 				scene.remove(drop.mesh);
+				scene.remove(drop.mcfHelperObject);
+			}
 			drop = new WaterDrop();
 
-			// drop.addNoise(0.06);
+			drop.addNoise(drop.noiseFactor);
 			drop.buildNeighborMap();
 
 			scene.add(drop.mesh);
@@ -451,24 +417,13 @@
 		}
 		reset();
 
-		// vertexNormals = new Array(geom.vertices.length);
-
-		// var equivalentAreaFactor = 1/(Math.PI * 2 * 1);	// A = 2pi * r * h
-
 		var frame = 0;
-		// var mcfLineLength = 0;
-
 		var render = function() {
 
 			frame++;
-			// mcfLineLength = 0.05 * Math.sin(frame / 30) + 0.05;
-
-			if(play) {//&& frame % 2 == 0) {
-				drop.evolve();
-				drop.evolve();
-				drop.evolve();
-				drop.evolve();
-				drop.evolve();
+			if(play) {
+				for(var i=0; i<drop.iterations; i++)
+					drop.evolve();
 
 				drop.geometry.verticesNeedUpdate = true;
 
