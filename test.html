@@ -23,10 +23,10 @@
 			0.1,
 			1000);
 
-		camera.position.z = 1.9;
+		camera.position.z = 1.5;
 
 		var renderer = new THREE.WebGLRenderer({antialias:true});
-		// var renderer = new THREE.CanvasRenderer({antialias:true});
+		var renderer = new THREE.CanvasRenderer({antialias:true});
 		renderer.setClearColor(0x143768);
 		renderer.setClearColor(0x000000);
 
@@ -102,7 +102,7 @@
 
 			this.addNoise = function(magnitude) {
 				// introduce some noise
-				for (var i=0; i<this.geometry.vertices.length; i++) {
+				for(var i=0; i<this.geometry.vertices.length; i++) {
 					this.geometry.vertices[i].y += magnitude * (Math.random() - 0.5);
 					this.geometry.vertices[i].x += magnitude * (Math.random() - 0.5);
 					this.geometry.vertices[i].z += magnitude * (Math.random() - 0.5);
@@ -270,7 +270,7 @@
 			// this.mcfHelperEnabled = true;
 
 
-
+			this.frameCount = 0;
 
 			this.evolve = function() {
 				var vertices = this.geometry.vertices;
@@ -338,37 +338,41 @@
 
 					neighbors = this.neighborMap[i];
 
-					// loop through the neighboring vertices to see if any of them are too close
-					for (j=0, neighborCount=neighbors.length; j<neighborCount; j++) {
-						neighborIndex = neighbors[j];
+					if(this.frameCount++ === 5) {
+						this.frameCount = 0;
+
+						// loop through the neighboring vertices to see if any of them are too close
+						for(j=0, neighborCount=neighbors.length; j<neighborCount; j++) {
+							neighborIndex = neighbors[j];
 
 
 
-						// skip ones that have already been merged with another point
-						if(merged.indexOf(neighborIndex) > -1)
-							continue;
+							// skip ones that have already been merged with another point
+							if(merged.indexOf(neighborIndex) > -1)
+								continue;
 
-						B = vertices[neighborIndex];
+							B = vertices[neighborIndex];
 
-						BA = A.clone().sub(B);
+							BA = A.clone().sub(B);
 
-						if(BA.lengthManhattan() < this.mergeThreshold) {
-							// we must now eliminate vertex A, and replace all references to it with B
-							mergeTargets[i] = neighborIndex;
-							merged.push(i);
-							merged.push(neighborIndex);
+							if(BA.lengthManhattan() < this.mergeThreshold) {
+								// we must now eliminate vertex A, and replace all references to it with B
+								mergeTargets[i] = neighborIndex;
+								merged.push(i);
+								merged.push(neighborIndex);
 
-							// average the velocities
-							this.velocity[neighborIndex].add(v).multiplyScalar(0.5);
-							v.a = v.b = v.c = 0;
+								// average the velocities
+								this.velocity[neighborIndex].add(v).multiplyScalar(0.5);
+								v.a = v.b = v.c = 0;
 
-							// move B half way to A
-							B.add(BA.multiplyScalar(0.5));
+								// move B half way to A
+								B.add(BA.multiplyScalar(0.5));
 
-							// this.replaceNeighbor(i, B);
+								// this.replaceNeighbor(i, B);
 
 
-							// break;
+								// break;
+							}
 						}
 					}
 
