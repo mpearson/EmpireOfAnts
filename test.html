@@ -75,13 +75,15 @@
 			this.size = 1;
 			this.detail = 16;
 
-			this.forceFactor = 0.01;
-			this.dampingFactor = 0.97;
+			this.forceFactor = 0.008;
+			this.normalDamping = 0.99;
+			this.tangentDamping = 0.9;
+			this.damping = 0.98;
 			this.mergeThreshold = 0.8 * this.size / this.detail;
 			this.iterations = 1;
 			this.noiseFactor = 0.0;
 			this.lvcFactor = -1.0;
-			this.aspectRatio = 1.0;
+			this.aspectRatio = 1.5;
 
 			this.geometry = new THREE.BoxGeometry(
 				this.size*this.aspectRatio,
@@ -94,6 +96,12 @@
 			// this.geometry = new THREE.IcosahedronGeometry(1,3);
 			this.geometry.mergeVertices();
 
+
+			var vertices = this.geometry.vertices;
+			var faces = this.geometry.faces;
+			var vertexCount = vertices.length;
+			var i, count;
+
 			this.material = new THREE.MeshBasicMaterial({color: 0x447733, wireframe: true });
 			// this.material = new THREE.MeshBasicMaterial({color: 0x87c9ff, wireframe: true });
 			// this.material = new THREE.MeshBasicMaterial({color: 0xff00ff, wireframe: true });
@@ -101,13 +109,13 @@
 
 			this.addNoise = function(magnitude) {
 				// introduce some noise
-				for(var i=0; i<this.geometry.vertices.length; i++) {
+				for(i=0, count=vertices.length; i<count; i++) {
 
 					// this.geometry.vertices[i].x *= 0.5;
 
-					this.geometry.vertices[i].y += magnitude * (Math.random() - 0.5);
-					this.geometry.vertices[i].x += magnitude * (Math.random() - 0.5);
-					this.geometry.vertices[i].z += magnitude * (Math.random() - 0.5);
+					vertices[i].y += magnitude * (Math.random() - 0.5);
+					vertices[i].x += magnitude * (Math.random() - 0.5);
+					vertices[i].z += magnitude * (Math.random() - 0.5);
 				}
 			}
 
@@ -115,15 +123,11 @@
 			this.vertexNormals = null;
 			this.faceMap = null;
 
-			this.velocity = new Array(this.geometry.vertices.length);
-			for(var i=0, count=this.geometry.vertices.length; i<count; i++)
-				this.velocity[i] = new THREE.Vector3(0,0,0);
+			this.velocity = new Array(vertices.length);
+			var dv = this.velocity;
 
-			this.startingVolume = 0;
-			for(var i=0, count=this.geometry.faces.length, vertices = this.geometry.vertices, face; i<count; i++) {
-				face = this.geometry.faces[i];
-				this.startingVolume += vertices[face.a].dot(vertices[face.b].clone().cross(vertices[face.c]));
-			}
+			for(i=0, count=vertices.length; i<count; i++)
+				dv[i] = new THREE.Vector3(0,0,0);
 
 
 
@@ -137,14 +141,12 @@
 			this.velocityHelperObject = new THREE.Line(this.velocityHelperGeom, this.velocityMaterial);
 			this.velocityHelperObject.type = THREE.LinePieces;
 
-			this.mcfHelperGeom.vertices = new Array(this.geometry.vertices.length * 2);
-			this.velocityHelperGeom.vertices = new Array(this.geometry.vertices.length * 2);
-			for(var i=0; i<this.mcfHelperGeom.vertices.length; i++) {
+			this.mcfHelperGeom.vertices = new Array(vertices.length * 2);
+			this.velocityHelperGeom.vertices = new Array(vertices.length * 2);
+			for(i=0, count=vertices.length; i<count; i++) {
 				this.mcfHelperGeom.vertices[i] = new THREE.Vector3(0,0,0);
 				this.velocityHelperGeom.vertices[i] = new THREE.Vector3(0,0,0);
 			}
-
-
 
 			this.sortNeighbors = function(pairs) {
 				if(pairs.length < 2)
@@ -190,8 +192,10 @@
 				// for each vertex, create a list of vertex pairs for each neighboring triangle
 				for(i=0, count=faces.length; i<count; i++) {
 					face = faces[i];
-					if(face.a === face.b)	// no degenerates!
+					if(face.a === face.b) {	// no degenerates!
+						// console.log('skipping '+face.a +','+face.b+','+face.c);
 						continue;
+					}
 
 					vertexNormals[face.a] = face.vertexNormals[0];
 					vertexNormals[face.b] = face.vertexNormals[1];
@@ -217,43 +221,43 @@
 				this.vertexNormals = vertexNormals;
 			};
 
-			// calculate the weighted sum of forces from each neighboring vertex
-			// ...the "surface tension" if you will
-			this.computeSurfaceTension = function(A, neighbors) {
-				var vertices = this.geometry.vertices;
-				var netForce = new THREE.Vector3(0,0,0);
-				var n, count, B, C, BA, BC, force, totalLength = 0;
+			// nifty little algorithm that sums positive and negative volumes
+			// of tetrahedrons from the origin to each face.
+			// also calculates the center of mass of the mesh
+			this.calculateVolume = function() {
+				var face,
+					volume,
+					center,
+					totalVolume = 0,
+					centroid = new THREE.Vector3(0,0,0),
+					A, B, C;
 
+				for(i=0, count=faces.length; i<count; i++) {
+					face = faces[i];
+					A = vertices[face.a];
+					B = vertices[face.b];
+					C = vertices[face.c];
 
-				for(n=0, count=neighbors.length; n<count; n++) {
-					B = vertices[neighbors[n]];
-					// C = vertices[neighbors[(n + 1) % count]];
-					// C = vertices[neighbors[(count + n - 1) % count]];
+					// skip degenerate faces
+					if(A === B || A === C || B === C)
+						continue;
 
-					// compute relative vectors between the 3 vertices
-					BA = A.clone().sub(B); //.normalize();
-					totalLength += BA.length();
-					// BC = C.clone().sub(B);
+					volume = A.dot(B.clone().cross(C));
+					totalVolume += volume;
 
-					// AB = B.clone().sub(A);
-					// BC = C.clone().sub(B);
-
-					// force = AB.add(BC.multiplyScalar(0.5));
-
-					// force = BA.clone().projectOnVector(BC).sub(BA);
-
-					// netForce.add(force.multiplyScalar(BC.length()));
-					// netForce.add(force.setLength(AC.angleTo(BC)));
-
-					// var len = BA.length();
-					// netForce.add(BA.multiplyScalar((0.08 - len) / len));
-					// netForce.add(force);
-					netForce.sub(BA);
+					center = A.clone().add(B).add(C).multiplyScalar(volume / 4);
+					centroid.add(center);
 				}
-				return netForce.divideScalar(totalLength / count);
+
+				centroid.divideScalar(totalVolume);
+
+				return totalVolume;
 			};
 
+			this.startingVolume = this.calculateVolume();
 
+			// calculate the weighted sum of forces from each neighboring vertex
+			// ...the "surface tension" if you will
 			this.applySurfaceTension = function(i) {
 				var vertices = this.geometry.vertices;
 				var netForce = new THREE.Vector3(0,0,0);
@@ -267,21 +271,32 @@
 
 					netForce.sub(BA);
 				}
-				netForce.multiplyScalar(this.forceFactor * (count / totalLength));
+				netForce.multiplyScalar(this.forceFactor * count/totalLength);
 				this.velocity[i].add(netForce);
 
 				netForce.multiplyScalar(this.lvcFactor / count);
 
-				// var volumeDelta = netForce.projectOnVector(this.vertexNormals[i]);
-
 				for(n=0, count=neighbors.length; n<count; n++)
 					this.velocity[neighbors[n]].add(netForce);
 					// this.velocity[neighbors[n]].add(this.vertexNormals[neighbors[n]]).setLength(volumeDelta.length());
-
-
-
 			};
 
+
+			this.applyVelocity = function(i) {
+				// apply dV to vertex
+				var v = this.velocity[i];
+
+				this.geometry.vertices[i].add(v);
+				v.multiplyScalar(this.damping);
+
+				// if(this.vertexNormals[i] !== undefined) {
+				// 	var vTangent = v.clone().projectOnPlane(this.vertexNormals[i]);
+				// 	v.sub(vTangent);	// v is now just the normal component
+
+				// 	v.multiplyScalar(this.normalDamping);
+				// 	v.add(vTangent.multiplyScalar(this.tangentDamping));
+				// }
+			}
 
 			// this.mcfHelperEnabled = true;
 
@@ -300,20 +315,20 @@
 					if(A.x == -1000)
 						continue;
 
-					v = this.velocity[i];
+					// v = this.velocity[i];
 
 
-					if(this.mcfHelperEnabled) {
-						this.mcfHelperGeom.vertices[2 * i] = A.clone().multiplyScalar(0.01);
-						this.mcfHelperGeom.vertices[2 * i + 1] = v.clone().multiplyScalar(0.01);	// store initial velocity for later
+					// if(this.mcfHelperEnabled) {
+					// 	this.mcfHelperGeom.vertices[2 * i] = A.clone().multiplyScalar(0.01);
+					// 	this.mcfHelperGeom.vertices[2 * i + 1] = v.clone().multiplyScalar(0.01);	// store initial velocity for later
 
 						// this.velocityHelperGeom.vertices[2 * i] = A.clone();
 						// this.velocityHelperGeom.vertices[2 * i + 1] = A.clone().add(v.clone().multiplyScalar(200));
-					}
-
-
+					// }
 
 					this.applySurfaceTension(i);
+
+					this.applyVelocity(i);
 
 				}
 
@@ -321,6 +336,7 @@
 				var merged = [];
 				var neighborCount;
 				var BA;
+				var vNormal;
 
 
 				// console.debug("evolving!");
@@ -383,14 +399,9 @@
 						}
 					}
 
-
-					// apply dV to vertex
-					A.add(this.velocity[i].multiplyScalar(this.dampingFactor));
-
-
-					if(this.mcfHelperEnabled) {
+					// if(this.mcfHelperEnabled) {
 						// this.mcfHelperGeom.vertices[2 * i + 1] = this.mcfHelperGeom.vertices[2 * i + 1].multiplyScalar(-0.2).add(A);
-					}
+					// }
 				}
 
 				// if(merged.length == 0)
@@ -398,7 +409,6 @@
 
 				var faces = this.geometry.faces;
 				var vIndex, face, faceCount = faces.length;
-				var volume = 0;
 
 				// search for vertex A in each face and replace it with B
 				// starting at the end so we can delete things
@@ -416,12 +426,10 @@
 					if(face.a === face.b || face.a === face.c || face.b == face.c) {
 						// console.log('removing degenerate face ' + i + '('+face.a+','+face.b+','+face.c+')');
 						face.a = face.b = face.c = 0;
-					} else {
-						volume += vertices[face.a].dot(vertices[face.b].clone().cross(vertices[face.c]));
 					}
 				}
 
-				var correctionFactor = Math.pow(this.startingVolume/volume, 1/3);
+				var correctionFactor = Math.pow(this.startingVolume/this.calculateVolume(), 1/3);
 				// if(this.frameCount == 2) {
 				// 	console.log(volume);
 				// 	console.log(correctionFactor);
@@ -443,11 +451,14 @@
 
 				this.geometry.elementsNeedUpdate = true;
 				// this.geometry.buffersNeedUpdate = true;
-				this.buildNeighborMap();
 
 
 				this.geometry.computeFaceNormals();
 				this.geometry.computeVertexNormals();
+
+				this.buildNeighborMap();
+
+
 
 			};
 
