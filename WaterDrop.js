@@ -150,6 +150,11 @@ function WaterDrop() {
 		this.vertexNormals = vertexNormals;
 	};
 
+
+	this.freeEdges = Array();
+	this.freeFaces = Array();
+	this.freeVerts = Array();
+
 	this.buildHalfEdges = function() {
 		// loop through faces and create a half-edge for each face edge,
 		// containing one vertex and some other stuff
@@ -195,22 +200,20 @@ function WaterDrop() {
 		}
 
 		var A, B;
-		loop1:
+		outerLoop:
 		for(i=0, count=edgeVert.length; i<count; i++) {
 			if(edgePair[i] !== undefined)
 				continue;
 
 			A = edgeVert[i]; // primary vertex of this edge
-			B = edgeVert[edgeNext[edgeNext[j]]]; // opposite vertex
+			B = edgeVert[edgeNext[edgeNext[i]]]; // opposite vertex
 
 			for(j=0; j<count; j++) {
-				A = edgeVert[j];
-				B = edgeVert[edgeNext[edgeNext[j]]];
 
 				if(edgeVert[j] === B && edgeVert[edgeNext[edgeNext[j]]] === A) {
 					edgePair[i] = j;
 					edgePair[j] = i;
-					continue loop1;
+					continue outerLoop;
 				}
 			}
 			throw "could not find opposite vertex D:";
@@ -222,6 +225,8 @@ function WaterDrop() {
 		this.edgeNext = edgeNext;
 		this.edgePair = edgePair;
 
+		this.edgeLength = Array(edgeVert.length);
+
 	};
 
 	this.findLongestEdge = function() {
@@ -229,7 +234,6 @@ function WaterDrop() {
 			vertices = this.geometry.vertices,
 			edgeVert = this.edgeVert,
 			edgeNext = this.edgeNext,
-			edgePair = this.edgePair,
 			maxDist = 0;
 
 		for(i=0, count=edgeVert.length; i<count; i++) {
@@ -244,6 +248,33 @@ function WaterDrop() {
 		}
 		console.log('max dist: '+maxDist);
 
+	}
+
+	this.computeEdgeLengths = function() {
+		var i, count, A, B,
+			vertices = this.geometry.vertices,
+			edgeVert = this.edgeVert,
+			edgePair = this.edgePair,
+			edgeLength = this.edgeLength;
+
+		// first clear the old lengths
+		for(i=0, count=edgeLength.length; i<count; i++)
+			edgeLength[i] = null;
+
+		// now calculate new ones, skipping any that are already set
+		for(i=0; i<count; i++) {
+			if(edgeLength[i] !== null)
+				continue;
+
+			A = vertices[edgeVert[i]];
+			B = vertices[edgeVert[edgePair[i]]];
+
+			// set length for both half-edges
+			if(A.x === -1000 || B.x === -1000)
+				edgeLength[i] = edgeLength[edgePair[i]] = null;
+			else
+				edgeLength[i] = edgeLength[edgePair[i]] = A.distanceToSquared(B);
+		}
 	}
 
 
@@ -362,11 +393,146 @@ function WaterDrop() {
 
 
 
+	this.mergeEdge = function(AX) {
+
+		var i, count, edge, lastEdge, face,
+			vertices = this.geometry.vertices,
+			faces = this.geometry.faces,
+			edgeVert = this.edgeVert,
+			edgePair = this.edgePair,
+			edgeNext = this.edgeNext,
+			edgeFace = this.edgeFace,
+			edgeLength = this.edgeLength;
+
+        // -*-------F-------E---   we want to delete X and reconnect C, D, and E to A
+        // / \     /`\     / \
+        //    \   /```\   /   \    move A half way towards X and average their velocities
+        //     \ /`````\ /     \
+        // -----A-------X-------D
+        //     / \`````/ \     /
+        //    /   \```/   \   /
+        // \ /     \`/     \ /
+        // -*-------B-------C---
+
+		var A = edgeVert[edgePair[AX]],
+			X = edgeVert[AX];
+
+		var XA = edgePair[AX], XF = edgeNext[AX], FX = edgePair[XF], XE = edgeNext[FX],
+			EF = edgeNext[XE], FA = edgeNext[XF], AB = edgeNext[XA], BX = edgeNext[AB],
+			XB = edgePair[BX], BC = edgeNext[XB], CX = edgeNext[BC];
+
+		console.debug('merging '+X+' into '+A);
+
+		edge = AX;
+		// loop through the "spokes" of vertex B, starting on FX and ending on BX
+		while(edge !== BX) {
+			// replace vertex B with A in each face
+			face = faces[edgeFace[edge]];
+			// update the vertex of each edge
+			edgeVert[edge] = A;
+
+			if(face.a === X)
+				face.a = A;
+			else if(face.b === X)
+				face.b = A;
+			else if(face.c === X)
+				face.c = A;
+
+			edge = edgePair[edgeNext[edge]];
+		}
+
+		// repair the next-edge relationships
+		edgeNext[EF] = FA;
+		edgeNext[FA] = XE;
+		edgeNext[CX] = AB;
+		edgeNext[AB] = BC;
+
+		// delete stuff
+		this.removeFace(edgeFace[AX]);
+		this.removeFace(edgeFace[edgePair[AX]]);
+		this.removeVert(X);
+
+		this.removeEdge(FX), this.removeEdge(XF),
+		this.removeEdge(BX), this.removeEdge(XB),
+		this.removeEdge(AX), this.removeEdge(XA);
+
+	}
+
+	this.removeEdge = function(i) {
+		console.debug('removing edge '+i);
+		this.vertEdge[i] = null;
+		this.edgeVert[i] = null;
+		this.edgeFace[i] = null;
+		this.edgeNext[i] = null;
+		this.edgePair[i] = null;
+		this.edgeLength[i] = null;
+		this.freeEdges.push(i);
+	}
+
+	this.removeFace = function(i) {
+		console.debug('removing face '+i);
+		var face = this.geometry.faces[i];
+		face.a = face.b = face.c = 0;
+		this.freeFaces.push(i);
+	}
+
+	this.removeVert = function(i) {
+		console.debug('removing vert '+i);
+		var vert = this.geometry.vertices[i];
+		vert.x = vert.y = vert.z = -1000;
+		this.freeVerts.push(i);
+	}
+
+
 	this.evolve2 = function() {
+		var i, count, A, B, vA, vB, len;
+		var vertices = this.geometry.vertices,
+			velocity = this.velocity,
+			edgeVert = this.edgeVert,
+			edgePair = this.edgePair,
+			edgeLength = this.edgeLength;
+
+		for(i=0, count=vertices.length; i<count; i++) {
+			A = vertices[i];
+			if(A.x === -1000)
+				continue;
+
+			this.applySurfaceTension(i);
+			this.applyVelocity(i);
+		}
+
+		this.computeEdgeLengths();
+
+		if(this.frameCount++ === 5)
+			this.frameCount = 0;
+		else
+			return;
+
+		for(i=0, count=edgeLength.length; i<count; i++) {
+			len = edgeLength[i];
+
+			if(len !== null && len < this.mergeThreshold) {
 
 
+				A = vertices[edgeVert[edgePair[i]]];
+				B = vertices[edgeVert[i]];
+
+				vA = velocity[edgeVert[edgePair[i]]];
+				vB = velocity[edgeVert[i]];
+
+				// average the velocities
+				vA.add(vB).multiplyScalar(0.5);
+
+				// move B half way to A
+				A.add(B).multiplyScalar(0.5);
+
+				this.mergeEdge(i);
 
 
+			} else if(len > this.splitThreshold) {
+
+			}
+		}
 	};
 
 
