@@ -186,17 +186,17 @@ function WaterDrop() {
 			// vertEdge[face.a] = j;
 			edgeVert[j] = face.a;
 			edgeFace[j] = i;
-			edgeNext[j] = j++;
+			edgeNext[j] = ++j;
 
 			// vertEdge[face.b] = j;
 			edgeVert[j] = face.b;
 			edgeFace[j] = i;
-			edgeNext[j] = j++;
+			edgeNext[j] = ++j;
 
 			// vertEdge[face.c] = j;
 			edgeVert[j] = face.c;
 			edgeFace[j] = i;
-			edgeNext[j] = j++ - 2;
+			edgeNext[j] = ++j - 3;
 		}
 
 		var A, B;
@@ -207,6 +207,7 @@ function WaterDrop() {
 
 			A = edgeVert[i]; // primary vertex of this edge
 			B = edgeVert[edgeNext[edgeNext[i]]]; // opposite vertex
+			// console.debug(A+' '+B);
 
 			for(j=0; j<count; j++) {
 
@@ -261,9 +262,9 @@ function WaterDrop() {
 		for(i=0, count=edgeLength.length; i<count; i++)
 			edgeLength[i] = null;
 
-		// now calculate new ones, skipping any that are already set
+		// now calculate new ones, skipping any that are already set (or have been deleted)
 		for(i=0; i<count; i++) {
-			if(edgeLength[i] !== null)
+			if(edgeLength[i] !== null || edgeVert[i] === null)
 				continue;
 
 			A = vertices[edgeVert[i]];
@@ -423,7 +424,7 @@ function WaterDrop() {
 
 		console.debug('merging '+X+' into '+A);
 
-		edge = AX;
+		edge = FX;
 		// loop through the "spokes" of vertex B, starting on FX and ending on BX
 		while(edge !== BX) {
 			// replace vertex B with A in each face
@@ -437,6 +438,8 @@ function WaterDrop() {
 				face.b = A;
 			else if(face.c === X)
 				face.c = A;
+			else
+				console.debug('uh-oh');
 
 			edge = edgePair[edgeNext[edge]];
 		}
@@ -479,7 +482,8 @@ function WaterDrop() {
 	this.removeVert = function(i) {
 		console.debug('removing vert '+i);
 		var vert = this.geometry.vertices[i];
-		vert.x = vert.y = vert.z = -1000;
+		vert.x = vert.y = vert.z = 0;
+		this.vertEdge[i] = null;
 		this.freeVerts.push(i);
 	}
 
@@ -488,13 +492,13 @@ function WaterDrop() {
 		var i, count, A, B, vA, vB, len;
 		var vertices = this.geometry.vertices,
 			velocity = this.velocity,
+			vertEdge = this.vertEdge,
 			edgeVert = this.edgeVert,
 			edgePair = this.edgePair,
 			edgeLength = this.edgeLength;
 
 		for(i=0, count=vertices.length; i<count; i++) {
-			A = vertices[i];
-			if(A.x === -1000)
+			if(vertEdge[i] === null)
 				continue;
 
 			this.applySurfaceTension(i);
@@ -513,9 +517,8 @@ function WaterDrop() {
 
 			if(len !== null && len < this.mergeThreshold) {
 
-
-				A = vertices[edgeVert[edgePair[i]]];
-				B = vertices[edgeVert[i]];
+				A = edgeVert[edgePair[i]];
+				B = edgeVert[i];
 
 				vA = velocity[edgeVert[edgePair[i]]];
 				vB = velocity[edgeVert[i]];
@@ -524,7 +527,7 @@ function WaterDrop() {
 				vA.add(vB).multiplyScalar(0.5);
 
 				// move B half way to A
-				A.add(B).multiplyScalar(0.5);
+				vertices[A].add(vertices[B]).multiplyScalar(0.5);
 
 				this.mergeEdge(i);
 

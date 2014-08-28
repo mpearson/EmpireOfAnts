@@ -80,7 +80,7 @@
 				scene.remove(drop.mcfHelperObject);
 			}
 			drop = new WaterDrop();
-			// drop.buildHalfEdges();
+			drop.buildHalfEdges();
 
 			drop.addNoise(drop.noiseFactor);
 			drop.buildNeighborMap();
@@ -100,7 +100,7 @@
 			frame++;
 			if(play) {
 				for(var i=0; i<drop.iterations; i++)
-					drop.evolve();
+					drop.evolve2();
 
 				drop.geometry.verticesNeedUpdate = true;
 
