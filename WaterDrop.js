@@ -183,17 +183,17 @@ function WaterDrop() {
 				continue;
 			}
 
-			// vertEdge[face.a] = j;
+			vertEdge[face.a] = j;
 			edgeVert[j] = face.a;
 			edgeFace[j] = i;
 			edgeNext[j] = ++j;
 
-			// vertEdge[face.b] = j;
+			vertEdge[face.b] = j;
 			edgeVert[j] = face.b;
 			edgeFace[j] = i;
 			edgeNext[j] = ++j;
 
-			// vertEdge[face.c] = j;
+			vertEdge[face.c] = j;
 			edgeVert[j] = face.c;
 			edgeFace[j] = i;
 			edgeNext[j] = ++j - 3;
@@ -229,27 +229,6 @@ function WaterDrop() {
 		this.edgeLength = Array(edgeVert.length);
 
 	};
-
-	this.findLongestEdge = function() {
-		var i, count, A, B, dist,
-			vertices = this.geometry.vertices,
-			edgeVert = this.edgeVert,
-			edgeNext = this.edgeNext,
-			maxDist = 0;
-
-		for(i=0, count=edgeVert.length; i<count; i++) {
-			A = edgeVert[i];
-			B = edgeVert[edgeNext[edgeNext[i]]];
-
-			dist = vertices[A].distanceTo(vertices[B]);
-			if(dist > maxDist)
-				maxDist = dist;
-
-
-		}
-		console.log('max dist: '+maxDist);
-
-	}
 
 	this.computeEdgeLengths = function() {
 		var i, count, A, B,
@@ -340,12 +319,12 @@ function WaterDrop() {
 	this.startingVolume = this.volume;
 
 	this.forceFactor = 0.08;
-	this.normalDamping = 0.99;
-	this.tangentDamping = 0.9;
-	this.damping = 0.98;
+	// this.normalDamping = 0.99;
+	// this.tangentDamping = 0.9;
+	this.damping = 0.99;
 	this.iterations = 1;
 	this.noiseFactor = 0.0;
-	this.lvcFactor = -0.99;
+	this.lvcFactor = -1;
 
 	// calculate the weighted sum of forces from each neighboring vertex
 	// ...the "surface tension" if you will
@@ -372,6 +351,50 @@ function WaterDrop() {
 			// this.velocity[neighbors[n]].add(this.vertexNormals[neighbors[n]]).setLength(volumeDelta.length());
 	};
 
+	this.applySurfaceTension2 = function(i) {
+		var vertices = this.geometry.vertices,
+			velocity = this.velocity,
+			edgeVert = this.edgeVert,
+			edgeNext = this.edgeNext,
+			edgePair = this.edgePair;
+
+		var netForce = new THREE.Vector3(0,0,0);
+		var A, B, BA, count = 1;
+
+		A = vertices[i];
+
+		// loop around the neighborhood! weeee!
+		var firstEdge = this.vertEdge[i];
+		var edge = firstEdge;
+		while(true) {
+			B = vertices[edgeVert[edgePair[edge]]];
+			// AB = B.clone().sub(A);
+			// totalLength += BA.length();
+			netForce.add(B).sub(A);
+
+			edge = edgePair[edgeNext[edge]];
+			if(edge === firstEdge)
+				break;
+			count++;
+		}
+		// netForce.sub(A.clone().multiplyScalar(count));
+
+		netForce.multiplyScalar(this.forceFactor);
+		velocity[i].add(netForce);
+
+		netForce.multiplyScalar(this.lvcFactor / count);
+
+		// around we go again!
+		edge = firstEdge;
+		while(true) {
+			velocity[edgeVert[edgePair[edge]]].add(netForce);
+
+			edge = edgePair[edgeNext[edge]];
+			if(edge === firstEdge)
+				break;
+		}
+	};
+
 
 	this.applyVelocity = function(i) {
 		// apply dV to vertex
@@ -389,11 +412,6 @@ function WaterDrop() {
 		// }
 	}
 
-	// this.mcfHelperEnabled = true;
-
-
-
-
 	this.mergeEdge = function(AX) {
 
 		var i, count, edge, lastEdge, face,
@@ -402,8 +420,7 @@ function WaterDrop() {
 			edgeVert = this.edgeVert,
 			edgePair = this.edgePair,
 			edgeNext = this.edgeNext,
-			edgeFace = this.edgeFace,
-			edgeLength = this.edgeLength;
+			edgeFace = this.edgeFace;
 
         // -*-------F-------E---   we want to delete X and reconnect C, D, and E to A
         // / \     /`\     / \
@@ -415,17 +432,19 @@ function WaterDrop() {
         // \ /     \`/     \ /
         // -*-------B-------C---
 
-		var A = edgeVert[edgePair[AX]],
+		var XA = edgePair[AX], AB = edgeNext[XA], BX = edgeNext[AB],
+			XB = edgePair[BX], BC = edgeNext[XB], CX = edgeNext[BC],
+			XF = edgeNext[AX], FA = edgeNext[XF],
+			FX = edgePair[XF], XE = edgeNext[FX], EF = edgeNext[XE],
+			EX = edgePair[XE];
+
+		var A = edgeVert[XA],
 			X = edgeVert[AX];
 
-		var XA = edgePair[AX], XF = edgeNext[AX], FX = edgePair[XF], XE = edgeNext[FX],
-			EF = edgeNext[XE], FA = edgeNext[XF], AB = edgeNext[XA], BX = edgeNext[AB],
-			XB = edgePair[BX], BC = edgeNext[XB], CX = edgeNext[BC];
-
-		console.debug('merging '+X+' into '+A);
-
+		// console.debug('merging '+X+' into '+A);
+		var n = 0;
 		edge = FX;
-		// loop through the "spokes" of vertex B, starting on FX and ending on BX
+		// loop through the "spokes" of vertex X, starting on FX and ending on BX
 		while(edge !== BX) {
 			// replace vertex B with A in each face
 			face = faces[edgeFace[edge]];
@@ -439,10 +458,18 @@ function WaterDrop() {
 			else if(face.c === X)
 				face.c = A;
 			else
-				console.debug('uh-oh');
+				throw 'uh-oh: '+face.a+', '+face.b+', '+face.c;
 
 			edge = edgePair[edgeNext[edge]];
+			if(n++ > 20)
+				throw 'whoops, infinite loop on aisle 3!';
 		}
+
+		edgeFace[AB] = edgeFace[XB];
+		edgeFace[FA] = edgeFace[FX];
+
+		// XE is now AE, EX is now EA
+		// XC is now AC, CX is now CA
 
 		// repair the next-edge relationships
 		edgeNext[EF] = FA;
@@ -452,18 +479,35 @@ function WaterDrop() {
 
 		// delete stuff
 		this.removeFace(edgeFace[AX]);
-		this.removeFace(edgeFace[edgePair[AX]]);
+		this.removeFace(edgeFace[XA]);
 		this.removeVert(X);
 
-		this.removeEdge(FX), this.removeEdge(XF),
-		this.removeEdge(BX), this.removeEdge(XB),
-		this.removeEdge(AX), this.removeEdge(XA);
+		this.removeEdge(FX);
+		this.removeEdge(BX);
+		this.removeEdge(XF);
+		this.removeEdge(XB);
+		this.removeEdge(AX);
+		this.removeEdge(XA);
 
+		// degenerate case where X only has 3 neighbors
+		if(FX === CX) { // also BX === EX
+			edgeNext[FA] = AB;
+			edgeNext[BC] = FA;
+		}
 	}
 
 	this.removeEdge = function(i) {
-		console.debug('removing edge '+i);
-		this.vertEdge[i] = null;
+		if(this.edgeVert[i] === null)
+			return;
+
+		// console.debug('removing edge '+i);
+
+		// make sure we relace it if this edge was referenced by its vertex
+		if(this.vertEdge[this.edgeVert[i]] === i) {
+			this.vertEdge[this.edgeVert[i]] = this.edgePair[this.edgeNext[i]];
+			// console.log('changing vertEdge['+this.edgeVert[i]+']  from '+i+' to '+this.edgePair[this.edgeNext[i]]);
+		}
+
 		this.edgeVert[i] = null;
 		this.edgeFace[i] = null;
 		this.edgeNext[i] = null;
@@ -473,18 +517,39 @@ function WaterDrop() {
 	}
 
 	this.removeFace = function(i) {
-		console.debug('removing face '+i);
+		// console.debug('removing face '+i);
 		var face = this.geometry.faces[i];
 		face.a = face.b = face.c = 0;
 		this.freeFaces.push(i);
 	}
 
 	this.removeVert = function(i) {
-		console.debug('removing vert '+i);
+		// console.debug('removing vert '+i);
 		var vert = this.geometry.vertices[i];
 		vert.x = vert.y = vert.z = 0;
 		this.vertEdge[i] = null;
 		this.freeVerts.push(i);
+	}
+
+
+	this.correctGlobalVolume = function() {
+		this.calculateVolume();
+
+		var factor = Math.pow(this.startingVolume/this.volume, 1/3),
+			vert,
+			vertEdge = this.vertEdge,
+			vertices = this.geometry.vertices,
+			count = vertices.length,
+			i;
+
+		for(i=0; i<count; i++) {
+			if(vertEdge[i] === null)	// skip deleted vertices
+				continue;
+			vert = vertices[i];
+			vert.x *= factor;
+			vert.y *= factor;
+			vert.z *= factor;
+		}
 	}
 
 
@@ -501,7 +566,7 @@ function WaterDrop() {
 			if(vertEdge[i] === null)
 				continue;
 
-			this.applySurfaceTension(i);
+			this.applySurfaceTension2(i);
 			this.applyVelocity(i);
 		}
 
@@ -512,6 +577,8 @@ function WaterDrop() {
 		else
 			return;
 
+		var merged = Array();
+
 		for(i=0, count=edgeLength.length; i<count; i++) {
 			len = edgeLength[i];
 
@@ -519,6 +586,11 @@ function WaterDrop() {
 
 				A = edgeVert[edgePair[i]];
 				B = edgeVert[i];
+
+				if(merged.indexOf(A) > -1 || merged.indexOf(B) > -1) {
+					// console.log('skipping edge '+i);
+					continue;
+				}
 
 				vA = velocity[edgeVert[edgePair[i]]];
 				vB = velocity[edgeVert[i]];
@@ -531,11 +603,18 @@ function WaterDrop() {
 
 				this.mergeEdge(i);
 
+				merged.push(A);
+				merged.push(B);
+
 
 			} else if(len > this.splitThreshold) {
 
 			}
 		}
+
+		this.correctGlobalVolume();
+
+		// this.buildNeighborMap();
 	};
 
 
