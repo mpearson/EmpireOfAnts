@@ -84,7 +84,6 @@
 			drop.buildHalfEdges();
 
 			drop.addNoise(drop.noiseFactor);
-			drop.buildNeighborMap();
 
 			scene.add(drop.mesh);
 
@@ -101,7 +100,7 @@
 			frame++;
 			if(play) {
 				for(var i=0; i<drop.iterations; i++)
-					drop.evolve2();
+					drop.evolve();
 
 				drop.geometry.verticesNeedUpdate = true;
 

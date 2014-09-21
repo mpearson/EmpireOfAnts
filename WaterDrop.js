@@ -9,10 +9,17 @@ function WaterDrop() {
 
 	this.size = 1;
 	this.detail = 16;
-	this.mergeThreshold = 0.02 * this.size / this.detail;
-	this.splitThreshold = 0.06 * this.size / this.detail;
-	this.aspectRatio = 1.5;
+	this.mergeThreshold = Math.pow(0.9 * this.size / this.detail, 2);
+	this.splitThreshold = Math.pow(1.1 * this.size / this.detail, 2);
+	this.aspectRatio = 1;
 
+	this.forceFactor = 0.08;
+	// this.normalDamping = 0.99;
+	// this.tangentDamping = 0.9;
+	this.damping = 0.95;
+	this.iterations = 1;
+	this.noiseFactor = 0.0;
+	this.lvcFactor = -1;
 
 	this.geometry = new THREE.BoxGeometry(
 		this.size*this.aspectRatio,
@@ -31,7 +38,8 @@ function WaterDrop() {
 	var vertexCount = vertices.length;
 	var i, count;
 
-	this.material = new THREE.MeshBasicMaterial({color: 0x447733, wireframe: true });
+	this.material = new THREE.MeshBasicMaterial({color: 0x4499ff, wireframe: true });
+	// this.material = new THREE.MeshBasicMaterial({color: 0x447733, wireframe: true });
 	// this.material = new THREE.MeshBasicMaterial({color: 0x87c9ff, wireframe: true });
 	// this.material = new THREE.MeshBasicMaterial({color: 0xff00ff, wireframe: true });
 	this.mesh = new THREE.Mesh(this.geometry, this.material);
@@ -46,7 +54,7 @@ function WaterDrop() {
 			vertices[i].x += magnitude * (Math.random() - 0.5);
 			vertices[i].z += magnitude * (Math.random() - 0.5);
 		}
-	}
+	};
 
 	this.neighborMap = null;
 	this.vertexNormals = null;
@@ -77,78 +85,7 @@ function WaterDrop() {
 		this.velocityHelperGeom.vertices[i] = new THREE.Vector3(0,0,0);
 	}
 
-	this.sortNeighbors = function(pairs) {
-		if(pairs.length < 2)
-			return [];
 
-		var i, j, count = pairs.length/2, count2 = pairs.length;
-		var neighbors = Array(count);
-
-		neighbors[0] = pairs[0];
-		neighbors[1] = pairs[1];
-
-		var position = 1;
-
-		// search for a pair containing the current vertex, and add its comrade to the end of the array
-		for(i=0; i < count; i++) {
-			// we can skip the first 2 since they've already been added
-			for(j = 2; j < count2; j += 2) {
-				if(pairs[j] === neighbors[position])
-					neighbors[++position] = pairs[j +1 ];
-				else if(pairs[j + 1] === neighbors[position])
-					neighbors[++position] = pairs[j];
-				else
-					continue;
-				pairs[j] = pairs[j + 1] = null;	// once a vertex is added, we don't want to find it again
-				break;
-			}
-		}
-		return neighbors;
-	};
-
-	// build a data structure mapping a vertex to an ordered array of the surrounding vertices
-	this.buildNeighborMap = function() {
-		var vertices = this.geometry.vertices;
-		var faces = this.geometry.faces;
-		var i, j, count, count2, face, neighbors;
-
-		var neighborMap = Array(count);
-		var vertexNormals = Array(count);
-
-		for(i=0, count=vertices.length; i<count; i++)
-			neighborMap[i] = new Array();
-
-		// for each vertex, create a list of vertex pairs for each neighboring triangle
-		for(i=0, count=faces.length; i<count; i++) {
-			face = faces[i];
-			if(face.a === face.b) {	// no degenerates!
-				// console.log('skipping '+face.a +','+face.b+','+face.c);
-				continue;
-			}
-
-			vertexNormals[face.a] = face.vertexNormals[0];
-			vertexNormals[face.b] = face.vertexNormals[1];
-			vertexNormals[face.c] = face.vertexNormals[2];
-
-			neighbors = neighborMap[face.a];
-			if(neighbors.indexOf(face.b) < 0)
-				neighbors.push(face.b);
-			if(neighbors.indexOf(face.c) < 0)
-				neighbors.push(face.c);
-			neighbors = neighborMap[face.b];
-			if(neighbors.indexOf(face.a) < 0)
-				neighbors.push(face.a);
-			if(neighbors.indexOf(face.c) < 0)
-				neighbors.push(face.c);
-			neighbors = neighborMap[face.c];
-			if(neighbors.indexOf(face.b) < 0)
-				neighbors.push(face.b);
-			if(neighbors.indexOf(face.a) < 0)
-				neighbors.push(face.a);
-		}
-		this.neighborMap = neighborMap;
-		this.vertexNormals = vertexNormals;
-	};
 
 
 	this.freeEdges = Array();
@@ -257,8 +194,6 @@ function WaterDrop() {
 		}
 	}
 
-
-
 	this.centroid = new THREE.Vector3(0,0,0)
 	this.volume = 0;
 
@@ -318,40 +253,10 @@ function WaterDrop() {
 	this.calculateVolume();
 	this.startingVolume = this.volume;
 
-	this.forceFactor = 0.08;
-	// this.normalDamping = 0.99;
-	// this.tangentDamping = 0.9;
-	this.damping = 0.99;
-	this.iterations = 1;
-	this.noiseFactor = 0.0;
-	this.lvcFactor = -1;
 
 	// calculate the weighted sum of forces from each neighboring vertex
 	// ...the "surface tension" if you will
 	this.applySurfaceTension = function(i) {
-		var vertices = this.geometry.vertices;
-		var netForce = new THREE.Vector3(0,0,0);
-		var neighbors, n, count, A = vertices[i], BA, f, totalLength = 0;
-
-		neighbors = this.neighborMap[i];
-
-		for(n=0, count=neighbors.length; n<count; n++) {
-			BA = A.clone().sub(vertices[neighbors[n]]);
-			// totalLength += BA.length();
-
-			netForce.sub(BA);
-		}
-		netForce.multiplyScalar(this.forceFactor);
-		this.velocity[i].add(netForce);
-
-		netForce.multiplyScalar(this.lvcFactor / count);
-
-		for(n=0, count=neighbors.length; n<count; n++)
-			this.velocity[neighbors[n]].add(netForce);
-			// this.velocity[neighbors[n]].add(this.vertexNormals[neighbors[n]]).setLength(volumeDelta.length());
-	};
-
-	this.applySurfaceTension2 = function(i) {
 		var vertices = this.geometry.vertices,
 			velocity = this.velocity,
 			edgeVert = this.edgeVert,
@@ -410,6 +315,42 @@ function WaterDrop() {
 		// 	v.multiplyScalar(this.normalDamping);
 		// 	v.add(vTangent.multiplyScalar(this.tangentDamping));
 		// }
+	}
+
+
+	this.removeEdge = function(i) {
+		if(this.edgeVert[i] === null)
+			return;
+
+		// console.debug('removing edge '+i);
+
+		// make sure we relace it if this edge was referenced by its vertex
+		if(this.vertEdge[this.edgeVert[i]] === i) {
+			this.vertEdge[this.edgeVert[i]] = this.edgePair[this.edgeNext[i]];
+			// console.log('changing vertEdge['+this.edgeVert[i]+']  from '+i+' to '+this.edgePair[this.edgeNext[i]]);
+		}
+
+		this.edgeVert[i] = null;
+		this.edgeFace[i] = null;
+		this.edgeNext[i] = null;
+		this.edgePair[i] = null;
+		this.edgeLength[i] = null;
+		this.freeEdges.push(i);
+	}
+
+	this.removeFace = function(i) {
+		// console.debug('removing face '+i);
+		var face = this.geometry.faces[i];
+		face.a = face.b = face.c = 0;
+		this.freeFaces.push(i);
+	}
+
+	this.removeVert = function(i) {
+		// console.debug('removing vert '+i);
+		var vert = this.geometry.vertices[i];
+		vert.x = vert.y = vert.z = 0;
+		this.vertEdge[i] = null;
+		this.freeVerts.push(i);
 	}
 
 	this.mergeEdge = function(AX) {
@@ -493,44 +434,10 @@ function WaterDrop() {
 		if(FX === CX) { // also BX === EX
 			edgeNext[FA] = AB;
 			edgeNext[BC] = FA;
+		} else if(CX === EX) {
+			// debugger;
 		}
 	}
-
-	this.removeEdge = function(i) {
-		if(this.edgeVert[i] === null)
-			return;
-
-		// console.debug('removing edge '+i);
-
-		// make sure we relace it if this edge was referenced by its vertex
-		if(this.vertEdge[this.edgeVert[i]] === i) {
-			this.vertEdge[this.edgeVert[i]] = this.edgePair[this.edgeNext[i]];
-			// console.log('changing vertEdge['+this.edgeVert[i]+']  from '+i+' to '+this.edgePair[this.edgeNext[i]]);
-		}
-
-		this.edgeVert[i] = null;
-		this.edgeFace[i] = null;
-		this.edgeNext[i] = null;
-		this.edgePair[i] = null;
-		this.edgeLength[i] = null;
-		this.freeEdges.push(i);
-	}
-
-	this.removeFace = function(i) {
-		// console.debug('removing face '+i);
-		var face = this.geometry.faces[i];
-		face.a = face.b = face.c = 0;
-		this.freeFaces.push(i);
-	}
-
-	this.removeVert = function(i) {
-		// console.debug('removing vert '+i);
-		var vert = this.geometry.vertices[i];
-		vert.x = vert.y = vert.z = 0;
-		this.vertEdge[i] = null;
-		this.freeVerts.push(i);
-	}
-
 
 	this.correctGlobalVolume = function() {
 		this.calculateVolume();
@@ -553,7 +460,7 @@ function WaterDrop() {
 	}
 
 
-	this.evolve2 = function() {
+	this.evolve = function() {
 		var i, count, A, B, vA, vB, len;
 		var vertices = this.geometry.vertices,
 			velocity = this.velocity,
@@ -566,7 +473,7 @@ function WaterDrop() {
 			if(vertEdge[i] === null)
 				continue;
 
-			this.applySurfaceTension2(i);
+			this.applySurfaceTension(i);
 			this.applyVelocity(i);
 		}
 
@@ -614,179 +521,11 @@ function WaterDrop() {
 
 		this.correctGlobalVolume();
 
-		// this.buildNeighborMap();
+		this.geometry.computeFaceNormals();
+		this.geometry.computeVertexNormals();
 	};
 
 
 
 	this.frameCount = 0;
-
-
-	this.evolve = function() {
-		var vertices = this.geometry.vertices;
-		var i, j, k, neighborCount, vertexCount = vertices.length;
-		var A, B, v, f, f2, neighbors, neighborIndex;
-
-
-
-		for(i=0; i<vertexCount; i++) {
-			A = vertices[i];
-			if(A.x == -1000)
-				continue;
-
-			// v = this.velocity[i];
-
-
-			// if(this.mcfHelperEnabled) {
-			// 	this.mcfHelperGeom.vertices[2 * i] = A.clone().multiplyScalar(0.01);
-			// 	this.mcfHelperGeom.vertices[2 * i + 1] = v.clone().multiplyScalar(0.01);	// store initial velocity for later
-
-				// this.velocityHelperGeom.vertices[2 * i] = A.clone();
-				// this.velocityHelperGeom.vertices[2 * i + 1] = A.clone().add(v.clone().multiplyScalar(200));
-			// }
-
-			this.applySurfaceTension(i);
-
-			this.applyVelocity(i);
-
-		}
-
-		var mergeTargets = [];
-		var merged = [];
-		var neighborCount;
-		var BA;
-		var vNormal;
-
-
-		// console.debug("evolving!");
-		// return;
-		for(i=0; i<vertexCount; i++) {
-			A = vertices[i];
-			v = this.velocity[i];
-
-
-			if(this.mcfHelperEnabled) {
-				this.mcfHelperGeom.vertices[2 * i + 1] = this.mcfHelperGeom.vertices[2 * i + 1].sub(v);
-			}
-
-			// find the 2 faces faces sharing A and B (F1 and F2)
-			// find the far vertices of F1 and F2 (C1, C2)
-			// remove F1 and F2 from the faceMap of A, B, C1 and C2
-			//
-
-			// replace A with B in A's neighborMap and the faces in A's faceMap
-			if(merged.indexOf(i) > -1)
-				continue;
-
-			neighbors = this.neighborMap[i];
-
-			if(this.frameCount++ === 5) {
-				this.frameCount = 0;
-
-				// loop through the neighboring vertices to see if any of them are too close
-				for(j=0, neighborCount=neighbors.length; j<neighborCount; j++) {
-					neighborIndex = neighbors[j];
-
-
-
-					// skip ones that have already been merged with another point
-					if(merged.indexOf(neighborIndex) > -1)
-						continue;
-
-					B = vertices[neighborIndex];
-
-					BA = A.clone().sub(B);
-
-					var len = BA.lengthSq()
-
-					if(len < this.mergeThreshold) {
-						// we must now eliminate vertex A, and replace all references to it with B
-						mergeTargets[i] = neighborIndex;
-						merged.push(i);
-						merged.push(neighborIndex);
-
-						// average the velocities
-						this.velocity[neighborIndex].add(v).multiplyScalar(0.5);
-						v.a = v.b = v.c = 0;
-
-						// move B half way to A
-						B.add(BA.multiplyScalar(0.5));
-
-						// this.replaceNeighbor(i, B);
-
-
-						// break;
-					} else if(len > this.splitThreshold) {
-
-
-
-					}
-				}
-			}
-
-			// if(this.mcfHelperEnabled) {
-				// this.mcfHelperGeom.vertices[2 * i + 1] = this.mcfHelperGeom.vertices[2 * i + 1].multiplyScalar(-0.2).add(A);
-			// }
-		}
-
-		// if(merged.length == 0)
-		// 	return;
-
-		var faces = this.geometry.faces;
-		var vIndex, face, faceCount = faces.length;
-
-		// search for vertex A in each face and replace it with B
-		// starting at the end so we can delete things
-		for(i=faceCount-1; i>=0; i--) {
-			face = faces[i];
-
-			if((vIndex = mergeTargets[face.a]) !== undefined)
-				face.a = vIndex;
-			if((vIndex = mergeTargets[face.b]) !== undefined)
-				face.b = vIndex;
-			if((vIndex = mergeTargets[face.c]) !== undefined)
-				face.c = vIndex;
-
-			// if this face is now degenerate, then erase it from this world
-			if(face.a === face.b || face.a === face.c || face.b == face.c) {
-				// console.log('removing degenerate face ' + i + '('+face.a+','+face.b+','+face.c+')');
-				face.a = face.b = face.c = 0;
-			}
-		}
-
-		this.calculateVolume();
-
-		var correctionFactor = Math.pow(this.startingVolume/this.volume, 1/3);
-		// if(this.frameCount == 2) {
-		// 	console.log(volume);
-		// 	console.log(correctionFactor);
-		// }
-
-		for(i=0; i<vertexCount; i++) {
-			if(mergeTargets[i] === undefined) {
-				vertices[i].x *= correctionFactor;
-				vertices[i].y *= correctionFactor;
-				vertices[i].z *= correctionFactor;
-			} else {
-				// console.log('removing vertex ' + i);
-				vertices[i].x = -1000;
-				vertices[i].y = -1000;
-				vertices[i].z = -1000;
-			}
-		}
-
-
-		this.geometry.elementsNeedUpdate = true;
-		// this.geometry.buffersNeedUpdate = true;
-
-
-		this.geometry.computeFaceNormals();
-		this.geometry.computeVertexNormals();
-
-		this.buildNeighborMap();
-
-
-
-	};
-
 }
