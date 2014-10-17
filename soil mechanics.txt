@@ -1,0 +1,15 @@
+
+
+
+soil properties:
+
+
+mineral composition
+particle size distribution (sand-clay-silt triangle? grade quality?)
+grain shape (angularity, roundness, flatness)
+
+hydraulic conductivity / surface tension
+porosity / void ratio
+wet + dry density
+hydraulic expansion coefficient (cracking, etc)
+heat capacity
