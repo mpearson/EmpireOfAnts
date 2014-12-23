@@ -220,6 +220,7 @@ function WaterDrop() {
         var vertices = this.geometry.vertices,
             velocity = this.velocity,
             vertEdge = this.geometry.edges.key,
+            deleted = this.geometry.edges.deleted,
             edgeVert = this.geometry.edges.vert,
             edgePair = this.geometry.edges.pair,
             edgeLength = this.geometry.edges.lengthSq;
@@ -242,18 +243,18 @@ function WaterDrop() {
             var merged = Array();
 
             for(i=0, count=edgeLength.length; i<count; i++) {
-                len = edgeLength[i];
-
-                if(len === null)
+                if(deleted[i])
                     continue;
+
+                len = edgeLength[i];
 
                 A = edgeVert[edgePair[i]];
                 B = edgeVert[i];
 
-                if(false && len < this.mergeThreshold) {
+                if(len < this.mergeThreshold) {
                     if(merged.indexOf(A) > -1 || merged.indexOf(B) > -1) {
                         // log('skipping edge '+i);
-                        continue;
+                        // continue;
                     }
 
                     vA = velocity[A];
@@ -268,7 +269,7 @@ function WaterDrop() {
 
                     HalfEdge.mergeEdge(this.geometry, i);
                     // this.computeEdgeLengths();
-                    // this.computeVertexEdgeLengths(A);
+                    HalfEdge.computeVertEdgeLengths(this.geometry, A);
 
                     merged.push(A);
                     merged.push(B);
