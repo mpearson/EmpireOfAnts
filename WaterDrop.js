@@ -12,32 +12,37 @@ function log(x) {
 function WaterDrop() {
     this.cleanupInterval = 4; // frames between mesh optimizations
 
-    this.size = 1;
-    this.detail = 10;
-    this.mergeThreshold = Math.pow(0.9 * this.size / this.detail, 2);
-    this.splitThreshold = Math.pow(1.9 * this.size / this.detail, 2);
-    this.aspectRatio = 2;
 
-    this.forceFactor = 0.01;
+    var size = 1,
+        detail = 20,
+        segmentSize = size/detail,
+        timeFactor = 2;
+
+    this.mergeThreshold = Math.pow(0.9 * segmentSize, 2);
+    this.splitThreshold = Math.pow(1.9 * segmentSize, 2);
+    var aspectRatio = 1;
+
+    this.timeFactor = 1;
+
+    this.forceFactor = 0.1 * this.timeFactor * segmentSize;
     // this.normalDamping = 0.99;
     // this.tangentDamping = 0.9;
-    this.damping = 0.99;
+    this.damping = -0.2 * this.timeFactor * segmentSize;
     this.velocityBleed = 0;//.05;
     this.iterations = 1;
-    this.noiseFactor = 0.0;
-    this.lvcFactor = -1;
+    this.noiseFactor = 0.2 * segmentSize;
+    this.lvcFactor = -1.0;
 
     this.geometry = new THREE.BoxGeometry(
-        this.size*this.aspectRatio,
-        this.size,
-        this.size,
-        this.detail*this.aspectRatio,
-        this.detail,
-        this.detail);
+        size * aspectRatio,
+        size,
+        size,
+        detail * aspectRatio,
+        detail,
+        detail);
     // this.geometry = new THREE.TorusGeometry(0.8, 0.2, 16, 50);
     // this.geometry = new THREE.IcosahedronGeometry(1,3);
     this.geometry.mergeVertices();
-
 
     var vertices = this.geometry.vertices;
     var faces = this.geometry.faces;
@@ -61,6 +66,9 @@ function WaterDrop() {
             vertices[i].z += magnitude * (Math.random() - 0.5);
         }
     };
+
+
+    this.addNoise(this.noiseFactor);
 
     this.neighborMap = null;
     this.vertexNormals = null;
@@ -174,11 +182,11 @@ function WaterDrop() {
 
     this.applyVelocity = function(i) {
         // apply dV to vertex
-        this.localAverage(i);
+        // this.localAverage(i);
         var v = this.velocity[i];
 
         this.geometry.vertices[i].add(v);
-        v.multiplyScalar(this.damping);
+        v.multiplyScalar(1 + this.damping);
 
         // if(this.vertexNormals[i] !== undefined) {
         //  var vTangent = v.clone().projectOnPlane(this.vertexNormals[i]);
@@ -189,11 +197,7 @@ function WaterDrop() {
         // }
     }
 
-    this.setStartingVolume = function() {
-        this.startingVolume = HalfEdge.calculateVolume(this.geometry);
-    }
-
-    this.setStartingVolume();
+    this.startingVolume = HalfEdge.calculateVolume(this.geometry);
 
     this.correctGlobalVolume = function() {
         this.volume = HalfEdge.calculateVolume(this.geometry);
@@ -219,14 +223,14 @@ function WaterDrop() {
         var i, count, A, B, X, vA, vB, len;
         var vertices = this.geometry.vertices,
             velocity = this.velocity,
-            vertEdge = this.geometry.edges.key,
+            keyEdge = this.geometry.edges.key,
             deleted = this.geometry.edges.deleted,
             edgeVert = this.geometry.edges.vert,
             edgePair = this.geometry.edges.pair,
             edgeLength = this.geometry.edges.lengthSq;
 
         for(i=0, count=vertices.length; i<count; i++) {
-            if(vertEdge[i] === null)
+            if(keyEdge[i] === null)
                 continue;
 
             this.applySurfaceTension(i);
@@ -252,9 +256,9 @@ function WaterDrop() {
                 B = edgeVert[i];
 
                 if(len < this.mergeThreshold) {
-                    if(merged.indexOf(A) > -1 || merged.indexOf(B) > -1) {
+                    if(merged.indexOf(A) > -1) {// || merged.indexOf(B) > -1) {
                         // log('skipping edge '+i);
-                        // continue;
+                        continue;
                     }
 
                     vA = velocity[A];
@@ -268,11 +272,12 @@ function WaterDrop() {
                     vertices[A].add(vertices[B]).multiplyScalar(0.5);
 
                     HalfEdge.mergeEdge(this.geometry, i);
-                    // this.computeEdgeLengths();
+                    // HalfEdge.computeEdgeLengths(this.geometry);
                     HalfEdge.computeVertEdgeLengths(this.geometry, A);
 
                     merged.push(A);
-                    merged.push(B);
+                    // merged.push(B);
+                    // break;
 
 
                 } else if(false && len > this.splitThreshold) {
@@ -294,6 +299,8 @@ function WaterDrop() {
                         merged.push(X);
                     }
                 }
+
+                // log('Longest Cycle: '+HalfEdge.findLongestCycle(this.geometry));
             }
         }
 
