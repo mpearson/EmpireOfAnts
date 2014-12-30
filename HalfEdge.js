@@ -164,7 +164,7 @@ HalfEdge.computeEdgeLengths = function(geometry) {
 }
 
 HalfEdge.computeVertEdgeLengths = function(geometry, vertIndex) {
-    HalfEdge.checkEdgePairs(geometry);
+    // this.checkEdgePairs(geometry);
 
     var edges = geometry.edges,
         firstEdge = edges.key[vertIndex],
@@ -247,12 +247,13 @@ MeshUtils.calculateSolidMotion = function() {
 }*/
 
 HalfEdge.removeEdge = function(geometry, i) {
+    log('removing edge '+i);
+
     var edges = geometry.edges;
     // if(edges.vert[i] === null) {
         // debugger;
     //     return;
     // }
-    // log('removing edge '+i);
 
 
 
@@ -285,7 +286,7 @@ HalfEdge.removeFace = function(geometry, i) {
 }
 
 HalfEdge.removeVert = function(geometry, i) {
-    // log('removing vert '+i);
+    log('removing vert '+i);
     var vert = geometry.vertices[i];
     vert.x = vert.y = vert.z = 0;
     geometry.edges.key[i] = null;
@@ -294,7 +295,7 @@ HalfEdge.removeVert = function(geometry, i) {
 
 HalfEdge.mergeEdge = function(geometry, AX) {
 
-    // log('Merging edge '+AX)
+    log('Merging edge '+AX)
 
     var i, count, edge, lastEdge, face,
         vertices = geometry.vertices,
@@ -305,18 +306,15 @@ HalfEdge.mergeEdge = function(geometry, AX) {
         edgeNext = geometry.edges.next,
         edgeFace = geometry.edges.face;
 
-    // if(this.edgeLength[AX] === null)
-    //     throw('dangit');
-
-    // -*-------L------L2---   we want to delete X and reconnect L2, R2, etc to A
-    // / \     /`\     / \
-    //    \   /```\   /   \    move A half way towards X and average their velocities
-    //     \ /`````\ /     \
-    // -----A-------X-------*
-    //     / \`````/ \     /
-    //    /   \```/   \   /
-    // \ /     \`/     \ /
-    // -*-------R-------R2---
+    //  -*-------L------L2---   we want to delete the faces AXL and ARX,
+    //  / \     /`\     / \     vertex X, edges LX and RX,
+    //     \   /```\   /   \    and reconnect L2, L3, R2, R3, etc to A
+    //      \ /`````\ /     \
+    //  -----A-------X-------*
+    //      / \`````/ \     /
+    //     /   \```/   \   /
+    //  \ /     \`/     \ /
+    //  -*-------R-------R2---
 
     var XA = edgePair[AX],
         XL = edgeNext[AX], LA = edgeNext[XL],
@@ -331,6 +329,14 @@ HalfEdge.mergeEdge = function(geometry, AX) {
         L2 = edgeVert[XL2],
         R2 = edgeVert[RR2],
         X = edgeVert[AX];
+
+    if(XA === LA || AX === AR)
+        // return;
+        throw "ugh"; // shit
+
+    if(X === R || X === L)
+        // return;
+        throw "wat"; // shit
 
     // make sure vertices A, R and L don't end up without key edges
     keyEdge[A] = AR;
@@ -367,15 +373,16 @@ HalfEdge.mergeEdge = function(geometry, AX) {
 
     // repair the next-edge relationships
 
-    // ---------------L--     degenerate case where X
-    // \          _-'/|\      has only 3 neighbors
-    //  \      _-'  / | \
-    //   \  _-'    /  |
-    // ---A-------X   |
-    //   / `-_     \  |
-    //  /     `-.   \ | /
-    // /         `-._\|/
-    // ---------------R---
+    //  ---------------L--     degenerate case where X
+    //  \          _-'/|\      has only 3 neighbors
+    //   \      _-'  / | \
+    //    \  _-'    /  |
+    //  ---A-------X   |
+    //    / `-._    \  |
+    //   /      `-._ \ | /
+    //  /           `-\|/
+    //  ---------------R---
+
     // if(R === L2) { // also R2 === L
     if(RR2 === L2L) {
         edgeNext[LA] = AR;
@@ -402,12 +409,16 @@ HalfEdge.mergeEdge = function(geometry, AX) {
 
     this.removeVert(geometry, X);
 
-    /*HalfEdge.checkEdgePairs(geometry)
 
     // check if anything didn't get deleted good
     var removedEdges = [AX, XA, LX, XL, RX, XR];
     var deleted = geometry.edges.deleted;
 
+
+    return;
+
+    //diagnostics
+    HalfEdge.checkEdgePairs(geometry);
 
     for(i=0, count=keyEdge.length; i<count; i++) {
         if(i === X || keyEdge[i] === null)
@@ -425,6 +436,8 @@ HalfEdge.mergeEdge = function(geometry, AX) {
             throw("UGHHHH");
         if(deleted[edgePair[i]])
             throw("UGHHHH");
+        if(edgeVert[i] == X)
+            throw("UGHHHH");
     }
 
     for(i=0, count=keyEdge.length; i<count; i++) {
@@ -436,40 +449,40 @@ HalfEdge.mergeEdge = function(geometry, AX) {
 
 
     for(i=0, count=edgeVert.length; i<count; i++) {
+        if(deleted[i])
+            continue;
         if(edgeVert[i] == X)
             throw("UGHHHH");
-    }*/
+    }
 };
 
-HalfEdge.splitEdge = function(AB) {
-    var freeFaces = this.freeFaces,
-        freeVerts = this.freeVerts,
-        freeEdges = this.freeEdges,
-        edgeVert = this.edgeVert,
-        edgePair = this.edgePair,
-        edgeNext = this.edgeNext,
-        edgeFace = this.edgeFace,
-        edgeLength = this.edgeLength,
-        vertices = this.geometry.vertices,
+HalfEdge.splitEdge = function(geometry, AB) {
+    var freeFaces = geometry.freeFaces,
+        freeVerts = geometry.freeVerts,
+        freeEdges = geometry.freeEdges,
+        edgeVert = geometry.edges.vert,
+        edgePair = geometry.edges.pair,
+        edgeNext = geometry.edges.next,
+        edgeFace = geometry.edges.face,
+        deleted = geometry.edges.deleted,
+        keyEdge = geometry.edges.key,
         face,
-        faces = this.geometry.faces;
+        faces = geometry.faces;
 
     if(freeFaces.length < 2 || freeVerts.length === 0 || freeEdges.length < 6)
         return null; // this edge lives to see another day....for now
 
-    log('splitting edge '+AB+' ['+edgeVert[AB]+'->'+edgeVert[edgePair[AB]]+']');
+    log('Splitting edge '+AB+' ['+edgeVert[AB]+'->'+edgeVert[edgePair[AB]]+']');
 
-    //           B
-    //          /|\
-    //         / | \
-    //        /  |  \
-    //       /   |   \
-    //      L----X----R
-    //       \   |   /
-    //        \  |  /
-    //         \ | /
-    //          \|/
-    //           A
+    //          B
+    //        .'|'.
+    //      .'  |  '.
+    //    .'    |    '.
+    //  L       |       R
+    //    `.    |    .'
+    //      `.  |  .'
+    //        `.|.'
+    //          A
 
     var BA = edgePair[AB],
         AR = edgeNext[BA],
@@ -487,9 +500,10 @@ HalfEdge.splitEdge = function(AB) {
         XBL = edgeFace[BA], // reusing BAR
         ARX = freeFaces.pop(),
         XRB = freeFaces.pop();
+        log('Reinserting vertex '+X);
 
-    this.removeEdge(AB);
-    this.removeEdge(BA);
+    this.removeEdge(geometry, AB);
+    this.removeEdge(geometry, BA);
 
     var AX = freeEdges.pop(),
         XA = freeEdges.pop(),
@@ -499,11 +513,36 @@ HalfEdge.splitEdge = function(AB) {
         LX = freeEdges.pop(),
         XR = freeEdges.pop(),
         RX = freeEdges.pop();
+        log('Reinserting edges: ['+[AX, XA, XB, BX, XL, LX, XR, RX].join(', ')+']');
+
+        deleted[AX] = false;
+        deleted[XA] = false;
+        deleted[XB] = false;
+        deleted[BX] = false;
+        deleted[XL] = false;
+        deleted[LX] = false;
+        deleted[XR] = false;
+        deleted[RX] = false;
 
     face = faces[AXL], face.a = A, face.b = X, face.c = L,
     face = faces[XBL], face.a = X, face.b = B, face.c = L,
     face = faces[ARX], face.a = A, face.b = R, face.c = X,
     face = faces[XRB], face.a = X, face.b = R, face.c = B,
+
+    //          B
+    //        .'|'.
+    //      .'  |  '.
+    //    .'    |    '.
+    //  L- - - -X- - - -R
+    //    `.    |    .'
+    //      `.  |  .'
+    //        `.|.'
+    //          A
+
+    edgeNext[BL] = LX, edgeFace[BL] = XBL,
+    edgeNext[LA] = AX, edgeFace[LA] = AXL,
+    edgeNext[AR] = RX, edgeFace[AR] = ARX,
+    edgeNext[RB] = BX, edgeFace[RB] = XRB,
 
     edgeNext[AX] = XL, edgeVert[AX] = X, edgeFace[AX] = AXL, edgePair[AX] = XA,
     edgeNext[XA] = AR, edgeVert[XA] = A, edgeFace[XA] = ARX, edgePair[XA] = AX,
@@ -515,9 +554,48 @@ HalfEdge.splitEdge = function(AB) {
     edgeNext[RX] = XA, edgeVert[RX] = X, edgeFace[RX] = ARX, edgePair[RX] = XR;
 
     // reset key edges
-    this.keyEdge[X] = AX;
-    this.keyEdge[A] = XA;
-    this.keyEdge[B] = XB;
+    keyEdge[X] = XA;
+    keyEdge[A] = AR;
+    keyEdge[B] = BL;
+    keyEdge[L] = LX;
+    keyEdge[R] = RX;
+
+
+    return X;
+
+
+    //diagnostics
+    var i, count, deleted = geometry.edges.deleted;
+
+
+    for(i=0, count=keyEdge.length; i<count; i++) {
+        if(keyEdge[i] === null)
+            continue;
+        if(edgeVert[edgePair[keyEdge[i]]] !== i)
+            throw("uh-oh");
+    }
+
+
+    for(i=0, count=edgeVert.length; i<count; i++) {
+        if(deleted[i])
+            continue;
+
+        if(deleted[edgeNext[i]])
+            throw("UGHHHH");
+        if(deleted[edgePair[i]])
+            throw("UGHHHH");
+
+
+        if(edgeNext[edgeNext[edgeNext[i]]] !== i)
+            throw('aint no triangle up in heah!');
+    }
+
+    for(i=0, count=keyEdge.length; i<count; i++) {
+        if(keyEdge[i] === null && freeVerts.indexOf(i) == -1)
+            continue;
+        if(deleted[keyEdge[i]])
+            throw("UGHHHH");
+    }
 
     return X;
 };

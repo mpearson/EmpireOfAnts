@@ -5,32 +5,43 @@
 
 
 function log(x) {
-    console.debug(x);
+    // console.debug(x);
 }
 
 // water drop class
 function WaterDrop() {
-    this.cleanupInterval = 4; // frames between mesh optimizations
+    // frames between mesh optimizations
+    this.cleanupInterval = 4;
 
+    // number of evolutions per frame
+    this.iterations = 1;
 
-    var size = 1,
-        detail = 20,
-        segmentSize = size/detail,
-        timeFactor = 2;
-
-    this.mergeThreshold = Math.pow(0.9 * segmentSize, 2);
-    this.splitThreshold = Math.pow(1.9 * segmentSize, 2);
-    var aspectRatio = 1;
-
+    //
     this.timeFactor = 1;
 
-    this.forceFactor = 0.1 * this.timeFactor * segmentSize;
-    // this.normalDamping = 0.99;
-    // this.tangentDamping = 0.9;
-    this.damping = -0.2 * this.timeFactor * segmentSize;
-    this.velocityBleed = 0;//.05;
-    this.iterations = 1;
-    this.noiseFactor = 0.2 * segmentSize;
+    var size = 1,
+        aspectRatio = 1,
+        detail = 16,
+        segmentSize = size/detail,
+        noiseFactor = 0.0 * segmentSize;
+
+    // segment length threshholds as a factor of the "target" length
+    this.mergeThreshold = Math.pow(0.8 * segmentSize, 2);
+    this.splitThreshold = Math.pow(1.8 * segmentSize, 2);
+
+    // actual surface tension strength
+    this.forceFactor = (0.04 / segmentSize) * this.timeFactor / this.iterations;
+
+    // decays velocity with every frame
+    this.damping = -1.0 * segmentSize * this.timeFactor / this.iterations;
+    // this.normalDamping = -2.5 * segmentSize * this.timeFactor / this.iterations;
+    // this.tangentDamping = -5.0 * segmentSize * this.timeFactor / this.iterations;
+
+    // local velocity "blurring"...bah, doesnt' work
+    this.velocityBleed = 0.0;
+
+    // local volume correction: factor used to apply negative 'reaction'
+    // acceleration to surrounding vertices
     this.lvcFactor = -1.0;
 
     this.geometry = new THREE.BoxGeometry(
@@ -49,26 +60,28 @@ function WaterDrop() {
     var vertexCount = vertices.length;
     var i, count;
 
-    this.material = new THREE.MeshBasicMaterial({color: 0x4499ff, wireframe: true });
+    this.material = new THREE.MeshBasicMaterial({color: 0x2a87ff, wireframe: true });
+    // this.material = new THREE.MeshBasicMaterial({color: 0x4499ff, wireframe: true });
+
+    // this.material = new THREE.MeshBasicMaterial({color: 0x4499ff});
     // this.material = new THREE.MeshBasicMaterial({color: 0x447733, wireframe: true });
     // this.material = new THREE.MeshBasicMaterial({color: 0x87c9ff, wireframe: true });
     // this.material = new THREE.MeshBasicMaterial({color: 0xff00ff, wireframe: true });
     this.mesh = new THREE.Mesh(this.geometry, this.material);
 
-    this.addNoise = function(magnitude) {
+    this.addNoise = function() {
         // introduce some noise
         for(i=0, count=vertices.length; i<count; i++) {
 
             // this.geometry.vertices[i].x *= 0.5;
 
-            vertices[i].y += magnitude * (Math.random() - 0.5);
-            vertices[i].x += magnitude * (Math.random() - 0.5);
-            vertices[i].z += magnitude * (Math.random() - 0.5);
+            vertices[i].y += noiseFactor * (Math.random() - 0.5);
+            vertices[i].x += noiseFactor * (Math.random() - 0.5);
+            vertices[i].z += noiseFactor * (Math.random() - 0.5);
         }
     };
 
-
-    this.addNoise(this.noiseFactor);
+    this.addNoise();
 
     this.neighborMap = null;
     this.vertexNormals = null;
@@ -110,7 +123,7 @@ function WaterDrop() {
             edgePair = this.geometry.edges.pair;
 
         var netForce = new THREE.Vector3(0,0,0);
-        var A, B, BA, count = 1;
+        var A, B, C, totalLength = 0, f, AB, count = 1;
 
         A = vertices[i];
 
@@ -132,7 +145,12 @@ function WaterDrop() {
             if(iters++ > 20)
                 throw('dangit');
             B = vertices[edgeVert[edge]];
-            netForce.add(B).sub(A);
+            C = vertices[edgeVert[edgeNext[edge]]];
+            // AB = B.clone().sub(A);
+            f = C.clone().sub(B).multiplyScalar(0.5).add(B).sub(A);
+            // totalLength += AB.length();
+
+            netForce.add(f);
 
             edge = edgeNext[edgePair[edge]];
             if(edge === firstEdge)
@@ -140,7 +158,7 @@ function WaterDrop() {
             count++;
         }
 
-        netForce.multiplyScalar(this.forceFactor);
+        netForce.multiplyScalar(this.forceFactor / count);
         velocity[i].add(netForce);
 
         netForce.multiplyScalar(this.lvcFactor / count);
@@ -157,6 +175,8 @@ function WaterDrop() {
     };
 
     this.localAverage = function(i) {
+        if(this.velocityBleed == 0)
+            return;
         var firstEdge = this.geometry.edges.key[i],
             velocity = this.velocity,
             edgeVert = this.geometry.edges.vert,
@@ -182,18 +202,18 @@ function WaterDrop() {
 
     this.applyVelocity = function(i) {
         // apply dV to vertex
-        // this.localAverage(i);
+        this.localAverage(i);
         var v = this.velocity[i];
 
         this.geometry.vertices[i].add(v);
         v.multiplyScalar(1 + this.damping);
 
         // if(this.vertexNormals[i] !== undefined) {
-        //  var vTangent = v.clone().projectOnPlane(this.vertexNormals[i]);
-        //  v.sub(vTangent);    // v is now just the normal component
+        //     var vTangent = v.clone().projectOnPlane(this.vertexNormals[i]);
+        //     v.sub(vTangent);    // v is now just the normal component
 
-        //  v.multiplyScalar(this.normalDamping);
-        //  v.add(vTangent.multiplyScalar(this.tangentDamping));
+        //     v.multiplyScalar(this.normalDamping);
+        //     v.add(vTangent.multiplyScalar(this.tangentDamping));
         // }
     }
 
@@ -220,7 +240,7 @@ function WaterDrop() {
 
 
     this.evolve = function() {
-        var i, count, A, B, X, vA, vB, len;
+        var iteration, i, count, AB, A, B, X, vA, vB, len;
         var vertices = this.geometry.vertices,
             velocity = this.velocity,
             keyEdge = this.geometry.edges.key,
@@ -229,86 +249,82 @@ function WaterDrop() {
             edgePair = this.geometry.edges.pair,
             edgeLength = this.geometry.edges.lengthSq;
 
-        for(i=0, count=vertices.length; i<count; i++) {
-            if(keyEdge[i] === null)
-                continue;
 
-            this.applySurfaceTension(i);
-            this.applyVelocity(i);
-        }
 
-        this.correctGlobalVolume();
-        HalfEdge.computeEdgeLengths(this.geometry);
-
-        if(this.frameCount++ === this.cleanupInterval) {
-            this.frameCount = 0;
-            log('>>>>>>>>>>>>>>>>mesh cleanup frame');
-
-            var merged = Array();
-
-            for(i=0, count=edgeLength.length; i<count; i++) {
-                if(deleted[i])
+        for(iteration=0; iteration<this.iterations; iteration++) {
+            for(i=0, count=vertices.length; i<count; i++) {
+                if(keyEdge[i] === null)
                     continue;
 
-                len = edgeLength[i];
+                this.applySurfaceTension(i);
+                this.applyVelocity(i);
+            }
 
-                A = edgeVert[edgePair[i]];
-                B = edgeVert[i];
+            this.correctGlobalVolume();
+            HalfEdge.computeEdgeLengths(this.geometry);
 
-                if(len < this.mergeThreshold) {
-                    if(merged.indexOf(A) > -1) {// || merged.indexOf(B) > -1) {
-                        // log('skipping edge '+i);
+            if(this.frameCount++ === this.cleanupInterval) {
+                this.frameCount = 0;
+                log('>>>>>>>>>>>>>>>>mesh cleanup frame');
+
+                var merged = Array();
+
+                for(AB=0, count=edgeLength.length; AB<count; AB++) {
+                    if(deleted[AB])
                         continue;
-                    }
 
-                    vA = velocity[A];
-                    vB = velocity[B];
+                    len = edgeLength[AB];
 
-                    // average the velocities
-                    vA.add(vB).multiplyScalar(0.5);
-                    // vB.set(0, 0, 0);
+                    A = edgeVert[edgePair[AB]];
+                    B = edgeVert[AB];
 
-                    // move B half way to A
-                    vertices[A].add(vertices[B]).multiplyScalar(0.5);
+                    if(len < this.mergeThreshold) {
+                        if(merged.indexOf(A) > -1) {// || merged.indexOf(B) > -1) {
+                            // log('skipping edge '+AB);
+                            continue;
+                        }
 
-                    HalfEdge.mergeEdge(this.geometry, i);
-                    // HalfEdge.computeEdgeLengths(this.geometry);
-                    HalfEdge.computeVertEdgeLengths(this.geometry, A);
+                        vA = velocity[A];
+                        vB = velocity[B];
 
-                    merged.push(A);
-                    // merged.push(B);
-                    // break;
+                        // average the velocities
+                        vA.add(vB).multiplyScalar(0.5);
+                        // vB.set(0, 0, 0);
 
+                        // move B half way to A
+                        vertices[A].add(vertices[B]).multiplyScalar(0.5);
 
-                } else if(false && len > this.splitThreshold) {
-                    if(merged.indexOf(A) > -1 || merged.indexOf(B) > -1) {
-                        // log('skipping edge '+i);
-                        continue;
-                    }
-                    X = this.splitEdge(i);
-                    if(X !== null) {
-                        // X has average the velocities of A and B
-                        velocity[X] = velocity[B].clone().add(velocity[A]).multiplyScalar(0.5);
+                        HalfEdge.mergeEdge(this.geometry, AB);
+                        // HalfEdge.computeEdgeLengths(this.geometry);
+                        HalfEdge.computeVertEdgeLengths(this.geometry, A);
 
-                        // set X to half way half way between A and B
-                        vertices[X] = vertices[B].clone().add(vertices[A]).multiplyScalar(0.5);
-
-                        this.computeVertexEdgeLengths(X);
                         merged.push(A);
-                        merged.push(B);
-                        merged.push(X);
+
+                    } else if(len > this.splitThreshold) {
+                        if(merged.indexOf(A) > -1 || merged.indexOf(B) > -1) {
+                            // log('skipping edge '+AB);
+                            continue;
+                        }
+                        X = HalfEdge.splitEdge(this.geometry, AB);
+                        if(X !== null) {
+                            // X has average the velocities of A and B
+                            velocity[X] = velocity[B].clone().add(velocity[A]).multiplyScalar(0.5);
+
+                            // set X to half way half way between A and B
+                            vertices[X] = vertices[B].clone().add(vertices[A]).multiplyScalar(0.5);
+
+                            HalfEdge.computeVertEdgeLengths(this.geometry, X);
+                            merged.push(A);
+                            merged.push(B);
+                            merged.push(X);
+                        }
                     }
                 }
-
-                // log('Longest Cycle: '+HalfEdge.findLongestCycle(this.geometry));
             }
         }
-
         this.geometry.computeFaceNormals();
         this.geometry.computeVertexNormals();
     };
-
-
 
     this.frameCount = 0;
 }

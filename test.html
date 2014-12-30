@@ -33,8 +33,9 @@
 
 		var renderer = new THREE.WebGLRenderer({antialias:true});
 		// var renderer = new THREE.CanvasRenderer({antialias:true});
-		renderer.setClearColor(0x143768);
-		renderer.setClearColor(0x000000);
+		// renderer.setClearColor(0x143768);
+		// renderer.setClearColor(0x000000);
+		renderer.setClearColor(0x102a60);
 
 		renderer.setSize(window.innerWidth, window.innerHeight);
 		$('body').append(renderer.domElement);
@@ -102,8 +103,7 @@
 
 			frame++;
 			if(play) {
-				for(var i=0; i<drop.iterations; i++)
-					drop.evolve();
+				drop.evolve();
 
 				drop.geometry.verticesNeedUpdate = true;
 
@@ -111,7 +111,7 @@
 					drop.mcfHelperObject.geometry.verticesNeedUpdate = true;
 					drop.velocityHelperObject.geometry.verticesNeedUpdate = true;
 				}
-
+				// play = false;
 
 				// if(frame % 60 == 0) {
 					// drop.findLongestEdge()
